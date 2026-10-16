@@ -25,6 +25,14 @@ Click the metronome icon in the top bar (or press **M** to start/stop from anywh
 - *Auto-play during solves only*: the metronome starts when a solve starts and stops when it ends.
 - Clicks are scheduled on the Web Audio clock, so the beat stays steady while the timer is running.
 
+## Color schemes
+Click the half-circle icon in the top bar to open the scheme chooser, or use Settings → Color scheme. Each card shows a live preview of that scheme.
+- **Basic, Pro, Homebrew, Ocean, Grass, Red Sands, Man Page, Novel, Silver Aerogel**, named after the macOS Terminal profiles.
+- **SpeedStacks**: a blue and yellow scheme where the timer is drawn as an LCD panel in a dark bezel. A red LED lights while you hold and a green LED when you're ready, like the real timer.
+- **Competition**: modeled on the oval competition display board. It has a blue rim, a dark face, upright glowing red LED digits in a fixed-width module that shows all unlit `8:88.88` segments, and a **CUBETIMER** logo underneath. It has the same red/green hold and ready LEDs.
+- *Match system light/dark* follows your OS setting, using Basic or Pro.
+- For each scheme, the chart line colors were checked for color-blind separation and contrast against that scheme's own background. Text, timer and LED colors were contrast-checked too.
+
 ## History & stats
 Filter by range (all, today, last 7/30 days, last N solves). Every section below follows the filter.
 - **KPIs**: count and DNF rate, best single, mean ± σ, median and middle-50% range, best ao5/ao12, consistency (σ/mean), and trend (seconds gained per 100 solves).
@@ -41,4 +49,4 @@ Settings → *Add demo session* creates 420 realistic solves so you can try the 
 - Scrambles are random-move, not random-state like official WCA TNoodle scrambles. They are fine for practice.
 - Fonts: the timer uses **DSEG7 Classic Bold Italic** by keshikan (SIL Open Font License 1.1, bundled in `fonts/` with `DSEG-LICENSE.txt`). The rest of the UI uses **Roboto** from Google Fonts.
 - Files: `js/scramble.js` (scramblers + cube simulator), `js/stats.js` (averages, distribution),
-  `js/charts.js` (SVG charts), `js/metronome.js` (metronome audio engine), `js/app.js` (UI and timer), `css/style.css`.
+  `js/charts.js` (SVG charts), `js/metronome.js` (metronome audio engine), `js/app.js` (UI and timer), `css/style.css` (layout), `css/themes.css` (color schemes).

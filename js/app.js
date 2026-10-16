@@ -33,6 +33,20 @@
     preview: true,
   };
   const STICKER = { U: '#ffffff', D: '#ffd500', F: '#009b48', B: '#0046ad', R: '#b71234', L: '#ff5800' };
+  // Color schemes (tokens in css/themes.css), named after the macOS Terminal profiles.
+  const SCHEMES = [
+    ['basic', 'Basic'],
+    ['pro', 'Pro'],
+    ['homebrew', 'Homebrew'],
+    ['ocean', 'Ocean'],
+    ['grass', 'Grass'],
+    ['red-sands', 'Red Sands'],
+    ['man-page', 'Man Page'],
+    ['novel', 'Novel'],
+    ['silver-aerogel', 'Silver Aerogel'],
+    ['speedstacks', 'SpeedStacks'],
+    ['competition', 'Competition'],
+  ];
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -118,7 +132,11 @@
       }));
     if (!sessions.length) return null;
     const current = sessions.some((s) => s.id === d.current) ? d.current : sessions[0].id;
-    return { sessions, current, settings: Object.assign({}, DEFAULT_SETTINGS, d.settings || {}) };
+    const settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
+    // Older versions stored "light"/"dark".
+    settings.theme = { light: 'basic', dark: 'pro' }[settings.theme] || settings.theme;
+    if (!SCHEMES.some(([id]) => id === settings.theme)) settings.theme = 'auto';
+    return { sessions, current, settings };
   }
 
   function load() {
@@ -292,6 +310,8 @@
     if (m && m[2]) timerEl.replaceChildren(m[1], h('span', { class: 'timer-pen' }, '+'));
     else timerEl.textContent = text;
     timerEl.dataset.ghost = m ? m[1].replace(/\d/g, '8') : '';
+    // Fixed-width displays (Competition) always show every segment position.
+    timerEl.dataset.ghostFull = settings().precision === 3 ? '8:88.888' : '8:88.88';
   }
   const setSolving = (on) => document.body.classList.toggle('solving', on);
   const inspecting = () => T.inspStart > 0;
@@ -811,10 +831,91 @@
     hint();
   }
 
-  function applyTheme() {
+  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+  // "auto" follows the OS: Basic in light mode, Pro in dark mode.
+  function resolvedScheme() {
     const t = settings().theme;
-    if (t === 'auto') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = t;
+    return t === 'auto' ? (darkQuery.matches ? 'pro' : 'basic') : t;
+  }
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = resolvedScheme();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
+  }
+
+  darkQuery.addEventListener('change', () => {
+    if (settings().theme === 'auto') applyTheme();
+  });
+
+  function setScheme(id) {
+    settings().theme = id;
+    save();
+    applyTheme();
+  }
+
+  // "CUBETIMER" badge under the digits of the Competition display (hidden in
+  // other schemes via --display-logo).
+  function displayLogo() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs, text) => {
+      const e = document.createElementNS(NS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      if (text) e.textContent = text;
+      return e;
+    };
+    const svg = el('svg', { class: 'display-logo', viewBox: '0 0 300 44', 'aria-hidden': 'true' });
+    for (const [y, len] of [[8, 34], [15, 27], [22, 20]]) {
+      svg.append(el('path', { class: 'logo-speed', d: `M${44 - len},${y} h${len} l-2.5,4.5 h${-len} z` }));
+    }
+    svg.append(el('text', { class: 'logo-text', x: 48, y: 30, textLength: 236, lengthAdjust: 'spacingAndGlyphs' }, 'CUBETIMER'));
+    svg.append(el('path', { class: 'logo-swoosh', d: 'M47,35.5 L292,35.5 L289,39 L45,39 Z' }));
+    return svg;
+  }
+
+  function openSchemes() {
+    openModal('Color scheme', (body) => {
+      const auto = h('input', { type: 'checkbox', id: 'scheme-auto' });
+      const grid = h('div', { class: 'scheme-grid', role: 'group', 'aria-label': 'Color schemes' });
+      const sync = () => {
+        auto.checked = settings().theme === 'auto';
+        grid.querySelectorAll('.scheme-card').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.theme === resolvedScheme())));
+      };
+      auto.addEventListener('change', () => {
+        setScheme(auto.checked ? 'auto' : resolvedScheme());
+        sync();
+      });
+      // Each card carries its own data-theme, so its preview renders in that scheme.
+      for (const [id, name] of SCHEMES) {
+        const keys = ['--s1', '--s2', '--s3'].map((v) => {
+          const k = h('span');
+          k.style.background = `var(${v})`;
+          return k;
+        });
+        grid.append(
+          button(
+            [
+              h(
+                'span',
+                { class: 'scheme-window', 'aria-hidden': 'true' },
+                h('span', { class: 'timer-display' }, h('span', { class: 'timer', 'data-ghost': '88.88', 'data-ghost-full': '8:88.88' }, '12.34'), displayLogo()),
+                h('span', { class: 'scheme-keys' }, h('span', { class: 'dot' }), ...keys)
+              ),
+              h('span', { class: 'scheme-name' }, name, h('span', { class: 'check', 'aria-hidden': 'true' }, '✓')),
+            ],
+            () => {
+              setScheme(id);
+              sync();
+            },
+            'scheme-card',
+            { 'data-theme': id }
+          )
+        );
+      }
+      body.append(h('label', { class: 'scheme-auto', for: 'scheme-auto' }, auto, 'Match system light/dark (Basic / Pro)'), grid);
+      sync();
+    });
   }
 
   /* ================= Modals ================= */
@@ -1025,10 +1126,7 @@
         h(
           'div',
           { class: 'settings-grid' },
-          ...sel('Theme', 'theme', [['auto', 'Match system'], ['light', 'Light'], ['dark', 'Dark']], () => {
-            applyTheme();
-            if (currentView === 'history') renderHistory();
-          }),
+          ...sel('Color scheme', 'theme', [['auto', 'Match system (Basic / Pro)'], ...SCHEMES], applyTheme),
           ...sel('Scramble preview', 'preview', [[true, 'Show'], [false, 'Hide']], renderScramble)
         ),
         h('div', { class: 'settings-section' }, 'Data'),
@@ -1339,7 +1437,7 @@
       ariaLabel: `Progress of ${times.length} solves. Use left and right arrow keys to step through solves.`,
     });
     const notes = [];
-    if (hist.visible.single && pbs.size) notes.push('Dark dots mark a new personal-best single.');
+    if (hist.visible.single && pbs.size) notes.push('Large solid dots mark a new personal-best single.');
     if (times.some((t) => t === Infinity) && hist.visible.single) notes.push('× along the top marks a DNF.');
     if (res && res.clipped) notes.push('The axis is capped to keep the bulk readable; slower outliers appear as ▲ on the top edge.');
     $('#progress-foot').textContent = notes.join(' ');
@@ -1390,13 +1488,7 @@
   $('#session-select').addEventListener('change', (e) => switchSession(e.target.value));
   $('#session-btn').addEventListener('click', openSessions);
   $('#settings-btn').addEventListener('click', openSettings);
-  $('#theme-btn').addEventListener('click', () => {
-    const dark = settings().theme === 'dark' || (settings().theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    settings().theme = dark ? 'light' : 'dark';
-    save();
-    applyTheme();
-    if (currentView === 'history') renderHistory();
-  });
+  $('#theme-btn').addEventListener('click', openSchemes);
 
   $('#next-scramble').addEventListener('click', () => {
     if (scr.idx < scr.list.length - 1) {
@@ -1537,6 +1629,7 @@
   /* ================= Boot ================= */
 
   document.body.classList.add('at-timer');
+  $('#timer-display').append(displayLogo());
   applyTheme();
   applyMetroSettings();
   renderMetronome();
