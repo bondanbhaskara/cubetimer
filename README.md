@@ -39,5 +39,6 @@ Settings → *Add demo session* creates 420 realistic solves so you can try the 
 
 ## Notes
 - Scrambles are random-move, not random-state like official WCA TNoodle scrambles. They are fine for practice.
+- Fonts: the timer uses **DSEG7 Classic Bold Italic** by keshikan (SIL Open Font License 1.1, bundled in `fonts/` with `DSEG-LICENSE.txt`). The rest of the UI uses **Roboto** from Google Fonts.
 - Files: `js/scramble.js` (scramblers + cube simulator), `js/stats.js` (averages, distribution),
   `js/charts.js` (SVG charts), `js/metronome.js` (metronome audio engine), `js/app.js` (UI and timer), `css/style.css`.

@@ -283,6 +283,16 @@
   const timerEl = $('#timer');
 
   const setTimerClass = (c) => (timerEl.className = 'timer' + (c ? ' ' + c : ''));
+
+  // Pure times get faint "8"s behind each digit (unlit LCD segments); words
+  // like DNF / +2 / "solving" don't, since their glyph widths differ.
+  // The LCD font has no "+", so a +2 marker is drawn as a small raised sign.
+  function setTimerText(text) {
+    const m = /^([\d:.]+)(\+?)$/.exec(text);
+    if (m && m[2]) timerEl.replaceChildren(m[1], h('span', { class: 'timer-pen' }, '+'));
+    else timerEl.textContent = text;
+    timerEl.dataset.ghost = m ? m[1].replace(/\d/g, '8') : '';
+  }
   const setSolving = (on) => document.body.classList.toggle('solving', on);
   const inspecting = () => T.inspStart > 0;
   const coarse = window.matchMedia('(pointer: coarse)').matches;
@@ -300,7 +310,7 @@
   function showLastTime() {
     const s = session();
     const last = s.solves[s.solves.length - 1];
-    timerEl.textContent = last ? fmtSolve(last) : fmt(0);
+    setTimerText(last ? fmtSolve(last) : fmt(0));
     setTimerClass('');
     renderLastActions();
   }
@@ -365,7 +375,7 @@
   function arm() {
     T.state = 'armed';
     setTimerClass('holding');
-    if (!inspecting()) timerEl.textContent = fmt(0);
+    if (!inspecting()) setTimerText(fmt(0));
     $('#last-actions').hidden = true;
     hint('Keep holding…');
     const ready = () => {
@@ -393,7 +403,7 @@
     if (!inspecting()) return;
     const el = (performance.now() - T.inspStart) / 1000;
     if (el >= 17) return inspectionDNF();
-    timerEl.textContent = el < 15 ? String(Math.ceil(15 - el)) : '+2';
+    setTimerText(el < 15 ? String(Math.ceil(15 - el)) : '+2');
     if (T.state === 'inspecting') setTimerClass(el >= 15 ? 'inspect-late' : el >= 8 ? 'inspect-warn' : 'inspect');
     if (settings().beeps) {
       if (el >= 8 && !T.beeped[8]) {
@@ -446,7 +456,7 @@
     if (T.state !== 'running') return;
     const ms = performance.now() - T.start;
     const mode = settings().update;
-    timerEl.textContent = mode === 'full' ? fmt(ms) : mode === 'seconds' ? String(Math.floor(ms / 1000)) : 'solving';
+    setTimerText(mode === 'full' ? fmt(ms) : mode === 'seconds' ? String(Math.floor(ms / 1000)) : 'solving');
     T.raf = requestAnimationFrame(runLoop);
   }
 
