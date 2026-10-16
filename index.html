@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cube Timer</title>
+  <meta name="description" content="Speedcubing timer with scrambles, sessions, WCA averages and solve-history charts with distribution tables.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='1' y='1' width='22' height='22' rx='4' fill='%230b0b0b'/%3E%3Crect x='4' y='4' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3Crect x='9.7' y='4' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3Crect x='15.4' y='4' width='4.6' height='4.6' rx='1' fill='%23eb6834'/%3E%3Crect x='4' y='9.7' width='4.6' height='4.6' rx='1' fill='%232a78d6'/%3E%3Crect x='9.7' y='9.7' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3Crect x='15.4' y='9.7' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3Crect x='4' y='15.4' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3Crect x='9.7' y='15.4' width='4.6' height='4.6' rx='1' fill='%231baf7a'/%3E%3Crect x='15.4' y='15.4' width='4.6' height='4.6' rx='1' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" aria-label="Cube Timer">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>Cube Timer</span>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button role="tab" class="tab" data-view="timer" aria-selected="true">Timer</button>
+      <button role="tab" class="tab" data-view="history" aria-selected="false">History &amp; stats</button>
+    </nav>
+
+    <div class="top-controls">
+      <label class="select-wrap" title="Puzzle">
+        <span class="sr-only">Puzzle</span>
+        <select id="puzzle-select"></select>
+      </label>
+      <label class="select-wrap" title="Session">
+        <span class="sr-only">Session</span>
+        <select id="session-select"></select>
+      </label>
+      <button class="icon-btn" id="session-btn" title="Manage sessions" aria-label="Manage sessions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </button>
+      <button class="icon-btn" id="metro-btn" title="Metronome (M to start/stop)" aria-label="Show metronome" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.6 3h4.8l4.1 18H5.5z"/><path d="M12 16.5l5.2-9.5"/><path d="M7 16.5h10"/></svg>
+      </button>
+      <button class="icon-btn" id="theme-btn" title="Theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="fill"/></svg>
+      </button>
+      <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= Timer view ================= -->
+  <main id="view-timer" class="view timer-view">
+    <aside class="sidebar">
+      <section class="card stats-card" aria-labelledby="stats-title">
+        <div class="card-head">
+          <h2 id="stats-title">Statistics</h2>
+          <span class="muted small" id="session-mean"></span>
+        </div>
+        <table class="stats-table" id="stats-table">
+          <thead><tr><th></th><th>Current</th><th>Best</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="card solves-card" aria-labelledby="solves-title">
+        <div class="card-head">
+          <h2 id="solves-title">Solves <span class="muted" id="solve-count"></span></h2>
+          <button class="link-btn" id="open-history">Charts →</button>
+        </div>
+        <div class="solves-scroll" id="solves-scroll">
+          <table class="solves-table" id="solves-table">
+            <thead><tr><th>#</th><th>Time</th><th>ao5</th><th>ao12</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <button class="link-btn more-btn" id="more-solves" hidden>Show more</button>
+          <p class="empty-note" id="no-solves">No solves yet. Hold <kbd>Space</kbd> and release to start.</p>
+        </div>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="scramble-bar">
+        <button class="icon-btn ghost" id="prev-scramble" title="Previous scramble" aria-label="Previous scramble">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <div class="scramble-text" id="scramble" aria-live="polite"></div>
+        <button class="icon-btn ghost" id="next-scramble" title="Next scramble" aria-label="Next scramble">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+      <div class="scramble-tools">
+        <button class="link-btn" id="copy-scramble">Copy</button>
+        <button class="link-btn" id="edit-scramble">Edit</button>
+      </div>
+
+      <div class="timer-area" id="timer-area">
+        <div class="timer" id="timer" aria-live="off">0.00</div>
+        <form id="type-form" class="type-form" hidden autocomplete="off">
+          <label class="sr-only" for="time-input">Enter time</label>
+          <input id="time-input" inputmode="decimal" placeholder="12.34" spellcheck="false">
+          <p class="hint">Type a time and press <kbd>Enter</kbd> — e.g. <code>12.34</code>, <code>1234</code>, <code>1:02.34</code>, <code>DNF</code>, <code>12.34+</code></p>
+        </form>
+        <div class="timer-hint" id="timer-hint"></div>
+        <div class="last-actions" id="last-actions" hidden>
+          <button class="chip" data-pen="0" title="No penalty (Alt+1)">OK</button>
+          <button class="chip" data-pen="1" title="+2 penalty (Alt+2)">+2</button>
+          <button class="chip" data-pen="2" title="DNF (Alt+3)">DNF</button>
+          <button class="chip" id="last-comment" title="Comment">Note</button>
+          <button class="chip danger" id="last-delete" title="Delete (Alt+Z)">Delete</button>
+        </div>
+        <div class="quick-avgs" id="quick-avgs"></div>
+      </div>
+
+      <section class="metronome" id="metronome" aria-label="Metronome" hidden>
+        <div class="metro-head">
+          <span class="metro-title">Metronome</span>
+          <span class="metro-rate" id="metro-rate"></span>
+          <div class="metro-dots" id="metro-dots" aria-hidden="true"></div>
+          <button class="icon-btn ghost metro-close" id="metro-close" title="Hide panel (keeps playing)" aria-label="Hide metronome panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="metro-main">
+          <button class="metro-play" id="metro-play" aria-pressed="false" aria-label="Start metronome" title="Start / stop (M)">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="i-play"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="i-stop"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>
+          </button>
+          <button class="metro-step" data-step="-1" aria-label="Slower">−</button>
+          <label class="metro-bpm">
+            <input id="metro-bpm-input" type="number" min="30" max="300" inputmode="numeric" aria-label="Beats per minute">
+            <span class="metro-unit">BPM</span>
+          </label>
+          <button class="metro-step" data-step="1" aria-label="Faster">+</button>
+          <button class="chip metro-tap" id="metro-tap" title="Tap repeatedly to set the tempo">Tap</button>
+        </div>
+        <input type="range" id="metro-bpm-range" class="metro-range" min="30" max="300" step="1" aria-label="Tempo">
+        <details class="metro-more" id="metro-more">
+          <summary>Options</summary>
+          <div class="metro-options">
+            <label for="metro-beats">Accent</label>
+            <select id="metro-beats">
+              <option value="1">None</option>
+              <option value="2">Every 2 beats</option>
+              <option value="3">Every 3 beats</option>
+              <option value="4">Every 4 beats</option>
+              <option value="6">Every 6 beats</option>
+            </select>
+            <label for="metro-sound">Sound</label>
+            <select id="metro-sound">
+              <option value="click">Click</option>
+              <option value="beep">Beep</option>
+              <option value="wood">Wood block</option>
+            </select>
+            <label for="metro-volume">Volume</label>
+            <input type="range" id="metro-volume" class="metro-range" min="0" max="100" step="1">
+            <label class="metro-check" for="metro-auto"><input type="checkbox" id="metro-auto"> Auto-play during solves only</label>
+          </div>
+        </details>
+      </section>
+
+      <div class="preview" id="preview" aria-label="Scramble preview"></div>
+    </section>
+  </main>
+
+  <!-- ================= History view ================= -->
+  <main id="view-history" class="view history-view" hidden>
+    <div class="filter-row">
+      <label class="field">
+        <span>Range</span>
+        <select id="range-select">
+          <option value="all">All solves</option>
+          <option value="today">Today</option>
+          <option value="d7">Last 7 days</option>
+          <option value="d30">Last 30 days</option>
+          <option value="n12">Last 12 solves</option>
+          <option value="n50">Last 50 solves</option>
+          <option value="n100">Last 100 solves</option>
+          <option value="n500">Last 500 solves</option>
+          <option value="n1000">Last 1000 solves</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Bin width</span>
+        <select id="bin-select">
+          <option value="auto">Auto</option>
+          <option value="250">0.25 s</option>
+          <option value="500">0.5 s</option>
+          <option value="1000">1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+          <option value="30000">30 s</option>
+        </select>
+      </label>
+      <p class="filter-summary muted" id="range-summary"></p>
+    </div>
+
+    <div id="history-empty" class="card empty-state" hidden>
+      <h2>No solves in this range</h2>
+      <p class="muted">Do some solves on the Timer tab, or widen the range.</p>
+    </div>
+
+    <div id="history-content">
+      <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+      <section class="card chart-card" aria-labelledby="progress-title">
+        <div class="card-head wrap">
+          <div>
+            <h2 id="progress-title">Progress</h2>
+            <p class="muted small" id="progress-sub">Every solve as a dot, rolling averages as lines. Click a solve to open it.</p>
+          </div>
+          <div class="legend" id="progress-legend" role="group" aria-label="Series"></div>
+        </div>
+        <div class="chart" id="progress-chart"></div>
+        <p class="muted small chart-foot" id="progress-foot"></p>
+      </section>
+
+      <section class="card chart-card" aria-labelledby="dist-title">
+        <div class="card-head wrap">
+          <div>
+            <h2 id="dist-title">Distribution</h2>
+            <p class="muted small" id="dist-sub"></p>
+          </div>
+        </div>
+        <div class="chart" id="hist-chart"></div>
+        <div class="table-scroll">
+          <table class="data-table dist-table" id="dist-table">
+            <thead>
+              <tr><th>Time range</th><th class="num">Solves</th><th class="num">Share</th><th class="num">Cumulative (sub-X)</th><th class="bar-col" aria-hidden="true"></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="card" aria-labelledby="pct-title">
+          <div class="card-head"><h2 id="pct-title">Percentiles &amp; spread</h2></div>
+          <table class="data-table" id="pct-table"><tbody></tbody></table>
+        </section>
+        <section class="card" aria-labelledby="avg-title">
+          <div class="card-head"><h2 id="avg-title">Averages</h2></div>
+          <table class="data-table" id="avg-table">
+            <thead><tr><th></th><th class="num">Current</th><th class="num">Best</th><th class="num">Worst</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="daily-title">
+        <div class="card-head"><h2 id="daily-title">By day</h2></div>
+        <div class="table-scroll">
+          <table class="data-table" id="daily-table">
+            <thead>
+              <tr><th>Date</th><th class="num">Solves</th><th class="num">Best</th><th class="num">Best ao5</th><th class="num">Mean</th><th class="num">Median</th><th class="num">σ</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-inner">
+      <header class="modal-head">
+        <h2 id="modal-title"></h2>
+        <button class="icon-btn ghost" value="cancel" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </form>
+  </dialog>
+
+  <script src="js/scramble.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/metronome.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
