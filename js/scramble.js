@@ -193,6 +193,24 @@
   }
 
   const NET_ORIGIN = { U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2] };
+  const FACELET_ORDER = 'URFDLB';
+
+  function faceletIndex(sticker, n) {
+    const [face, row, col] = netPosition(sticker, n);
+    return FACELET_ORDER.indexOf(face) * n * n + row * n + col;
+  }
+
+  function cubeFacelets(cube) {
+    const facelets = [];
+    for (const st of cube.stickers) facelets[faceletIndex(st, cube.n)] = st.color;
+    return facelets.join('');
+  }
+
+  function cubeFromFacelets(facelets) {
+    const cube = createCube(3);
+    for (const st of cube.stickers) st.color = facelets[faceletIndex(st, cube.n)];
+    return cube;
+  }
 
   // Returns the cube net as data: a list of facelets with grid coordinates.
   function cubeNet(n, scramble) {
@@ -208,6 +226,9 @@
     PUZZLES,
     generate: (puzzle) => (PUZZLES[puzzle] || PUZZLES['333']).gen(),
     cubeNet,
+    cubeFacelets,
+    cubeFromFacelets,
+    applyMove,
     applyScramble,
     netPosition,
   };
