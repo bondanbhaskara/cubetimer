@@ -3,11 +3,11 @@
 A speedcubing timer in the spirit of cubetimer.com, with a full **History & stats**
 view: progress chart, histogram, distribution table, percentiles and per-day stats.
 
-No build step and no dependencies. Open `index.html` in a browser (double-click works),
+No build step. Open `index.html` in a browser (double-click works for manual timing),
 or serve the folder:
 
 ```bash
-python3 -m http.server 8080 --directory ~/cube-timer
+python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
 ## Timer
@@ -17,6 +17,14 @@ python3 -m http.server 8080 --directory ~/cube-timer
 - Scrambles for 2x2–7x7, 3x3 OH/BLD, Pyraminx, Skewb, Megaminx and Clock, with a cube-net preview for NxN.
 - Sessions (one puzzle per session); +2 / DNF / comments per solve; Alt+1/2/3 sets penalty on the last solve, Alt+Z deletes it.
 - Stats: single, mo3, ao5, ao12, ao50, ao100, ao1000 (current and best), using WCA rules: the best/worst 5% are trimmed (1 each for ao5/ao12), and if more solves are DNF than get trimmed, the average is a DNF.
+
+## GAN smart cube
+
+1. Open [localhost:8080](http://localhost:8080) after starting the server above from the repository, or open the app over HTTPS. Use Chrome or Edge with Web Bluetooth enabled. [Chrome’s platform and setup guide](https://developer.chrome.com/docs/capabilities/bluetooth#before-we-start).
+2. Close CubeStation and turn the white face to wake the GAN iCarry 4. In a **3x3** or **3x3 One-Handed** session with Timer input selected, click **Connect smart cube**, then **Choose cube**. If the browser cannot read the cube’s Bluetooth address, enter the six-byte MAC address and retry. [GAN’s iCarry 4 instructions](https://www.gancube.com/collections/i-carry-series).
+3. Start with a solved cube and follow the scramble with white on top and green in front. Once the app recognizes the scramble, the first turn starts the timer and the turn that solves the cube saves the time to the current session. If inspection is enabled, it starts as soon as the scramble matches. Press **Esc** to cancel, or select **Disconnect cube** to go back to manual timing.
+
+The connection dialog loads [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-web-bluetooth) from jsDelivr. The driver detects GAN Gen2, Gen3, and Gen4 services. The iCarry 4 still needs a physical-device test.
 
 ## Metronome
 Click the metronome icon in the top bar (or press **M** to start/stop from anywhere). The metronome runs separately from the timer, so it keeps playing between solves and in the History view.
@@ -48,5 +56,6 @@ Settings → *Add demo session* creates 420 realistic solves so you can try the 
 ## Notes
 - Scrambles are random-move, not random-state like official WCA TNoodle scrambles. They are fine for practice.
 - Fonts: the timer uses **DSEG7 Classic Bold Italic** by keshikan (SIL Open Font License 1.1, bundled in `fonts/` with `DSEG-LICENSE.txt`). The rest of the UI uses **Roboto** from Google Fonts.
-- Files: `js/scramble.js` (scramblers + cube simulator), `js/stats.js` (averages, distribution),
-  `js/charts.js` (SVG charts), `js/metronome.js` (metronome audio engine), `js/app.js` (UI and timer), `css/style.css` (layout), `css/themes.css` (color schemes).
+- Files: `js/scramble.js` (scramblers + cube simulator), `js/smart-cube.js` (GAN connection and cube state),
+  `js/stats.js` (averages, distribution), `js/charts.js` (SVG charts), `js/metronome.js` (metronome audio engine),
+  `js/app.js` (UI and timer), `css/style.css` (layout), `css/themes.css` (color schemes).

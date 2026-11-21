@@ -210,6 +210,7 @@
     el.classList.toggle('xlong', text.length > 260);
     $('#prev-scramble').disabled = scr.idx <= 0;
     renderPreview($('#preview'), session().puzzle, text);
+    updateSmartTarget();
   }
 
   function renderPreview(container, puzzle, scramble) {
@@ -318,11 +319,14 @@
   const coarse = window.matchMedia('(pointer: coarse)').matches;
 
   function hint(text) {
-    $('#timer-hint').textContent = text == null ? idleHint() : text;
+    const el = $('#timer-hint');
+    const value = text == null ? idleHint() : text;
+    if (el.textContent !== value) el.textContent = value;
   }
 
   function idleHint() {
     if (settings().input === 'typing') return '';
+    if (smartTiming()) return smartHint();
     const act = coarse ? 'Touch and hold the timer' : 'Hold Space';
     return settings().inspection ? `${coarse ? 'Tap the timer' : 'Press Space'} to start inspection` : `${act}, release to start`;
   }
@@ -415,7 +419,7 @@
     T.beeped = {};
     setSolving(true);
     $('#last-actions').hidden = true;
-    hint('Inspecting — hold to start the solve');
+    hint(smartTiming() ? 'Inspecting — turn the cube to start' : 'Inspecting — hold to start the solve');
     inspectionLoop();
   }
 
@@ -451,16 +455,18 @@
     hint('Inspection exceeded 17 s — DNF');
   }
 
-  function startSolve() {
+  function startSolve(start = performance.now()) {
     let pen = S.PEN_OK;
     if (inspecting()) {
-      if ((performance.now() - T.inspStart) / 1000 >= 15) pen = S.PEN_PLUS2;
+      const elapsed = start - T.inspStart;
+      if (elapsed >= 17000) return inspectionDNF();
+      if (elapsed >= 15000) pen = S.PEN_PLUS2;
       cancelAnimationFrame(T.raf);
       T.inspStart = 0;
     }
     T.penalty = pen;
     T.state = 'running';
-    T.start = performance.now();
+    T.start = start;
     setTimerClass('');
     setSolving(true);
     hint('');
@@ -481,8 +487,8 @@
   }
 
   // awaitRelease: the stopping key/touch is still down; ignore its release.
-  function stop(awaitRelease) {
-    const ms = performance.now() - T.start;
+  function stop(awaitRelease, end = performance.now()) {
+    const ms = Math.max(0, end - T.start);
     cancelAnimationFrame(T.raf);
     T.state = awaitRelease ? 'stopped' : 'idle';
     setSolving(false);
@@ -502,6 +508,129 @@
     stopAutoMetronome();
     showLastTime();
     hint();
+  }
+
+  /* ================= Smart cube ================= */
+
+  const SmartCube = window.SmartCube;
+  const smart = { cube: null, attempt: null, closing: false, target: null };
+  const smartEligible = () => settings().input === 'timer' && ['333', '333oh'].includes(session().puzzle);
+  const smartTiming = () => smart.cube && smartEligible();
+
+  function smartHint() {
+    const { facelets } = smart.cube;
+    if (!facelets) return 'Reading the cube state…';
+    if (!smart.target) return 'Use a scramble with U, R, F, D, L and B face turns.';
+    if (facelets === smart.target) return settings().inspection
+      ? 'Match the scramble again to restart inspection'
+      : 'Scramble matched. Turn the cube to start';
+    if (facelets === SmartCube.SOLVED) return 'Follow the scramble with white on top and green in front';
+    return 'Match the displayed scramble to start';
+  }
+
+  function renderSmartCube() {
+    const btn = $('#smart-cube-btn');
+    btn.hidden = !smart.cube && !smartEligible();
+    btn.disabled = !!smart.attempt || smart.closing;
+    btn.textContent = smart.cube ? 'Disconnect cube' : 'Connect smart cube';
+    $('#smart-cube-status').hidden = !smart.cube;
+    const name = $('#smart-cube-name');
+    const label = smart.cube?.name || '';
+    if (name.textContent !== label) name.textContent = label;
+    if (!smart.cube) $('#smart-cube-move').textContent = '';
+  }
+
+  function updateSmartTarget() {
+    const text = currentScramble();
+    smart.target = null;
+    if (smartTiming() && text && text.trim().split(/\s+/).every((move) => SmartCube.FACE_TURN.test(move))) {
+      const target = window.Scramble.cubeFacelets(window.Scramble.applyScramble(3, text));
+      if (target !== SmartCube.SOLVED) smart.target = target;
+    }
+    updateSmartReadiness();
+  }
+
+  function updateSmartReadiness() {
+    if (T.state !== 'idle') return;
+    if (smartTiming() && smart.target && smart.cube.facelets === smart.target && settings().inspection && timerActive()) {
+      beginInspection();
+    } else {
+      hint();
+    }
+  }
+
+  async function disconnectSmartCube(alreadyDisconnected = false) {
+    const cube = smart.cube;
+    const timing = smartTiming();
+    smart.cube = null;
+    smart.target = null;
+    if (timing && T.state !== 'idle') cancelTimer();
+    if (cube) smart.closing = true;
+    renderSmartCube();
+    updateSmartReadiness();
+    if (cube) {
+      await cube.disconnect(alreadyDisconnected).catch(() => {});
+      smart.closing = false;
+      renderSmartCube();
+    }
+  }
+
+  function finishCubeAttempt(attempt, message) {
+    if (smart.attempt !== attempt) return;
+    smart.attempt = null;
+    attempt.status.textContent = message || '';
+    attempt.connect.disabled = false;
+    attempt.address.disabled = false;
+    renderSmartCube();
+  }
+
+  function handleCubeEvent(event) {
+    const attempt = smart.attempt;
+    if (event.type === 'error' || event.type === 'disconnect') {
+      const message = event.message || 'Cube disconnected. Reconnect to use Bluetooth timing.';
+      const disconnected = disconnectSmartCube(event.type === 'disconnect');
+      if (attempt) disconnected.then(() => finishCubeAttempt(attempt, message));
+      else toast(message);
+      return;
+    }
+
+    if (event.type === 'state' || event.type === 'syncing') {
+      if (smartTiming() && T.state !== 'idle') {
+        cancelTimer();
+        toast('Timing canceled because the cube state changed unexpectedly');
+      }
+      if (event.type === 'state' && attempt) {
+        if (!attempt.status.isConnected || !modal.open) {
+          disconnectSmartCube().then(() => finishCubeAttempt(attempt));
+          return;
+        }
+        finishCubeAttempt(attempt);
+        modal.close();
+      }
+      if (event.type === 'syncing') $('#smart-cube-move').textContent = '';
+      updateSmartTarget();
+      return;
+    }
+
+    $('#smart-cube-move').textContent = `Last turn ${event.move}`;
+    if (!smartTiming() || !timerActive() || !smart.target) return;
+    const timedMove = Number.isFinite(event.time);
+    if (event.previous === smart.target && (inspecting() || (T.state === 'idle' && !settings().inspection))) {
+      if (!timedMove) {
+        cancelTimer();
+        toast('The starting turn arrived late. Match the scramble again to retry.');
+        return;
+      }
+      startSolve(event.time);
+    }
+    if (T.state === 'running' && smart.cube.facelets === SmartCube.SOLVED) {
+      if (timedMove) stop(false, event.time);
+      else {
+        cancelTimer();
+        toast('The final turn arrived late. The solve was canceled.');
+      }
+    }
+    updateSmartReadiness();
   }
 
   let audio = null;
@@ -642,7 +771,7 @@
     if (T.state === 'running') {
       e.preventDefault();
       if (e.code === 'Escape') cancelTimer();
-      else if (!e.repeat) stop(e.code === 'Space');
+      else if (!e.repeat && !smartTiming()) stop(e.code === 'Space');
       return;
     }
     if (isTyping(e.target)) return;
@@ -664,14 +793,16 @@
       return;
     }
     if (e.code === 'Space') {
+      if (e.target === $('#smart-cube-btn') && T.state === 'idle') return;
       e.preventDefault();
-      if (e.repeat || settings().input === 'typing') return;
+      if (e.repeat || settings().input === 'typing' || smartTiming()) return;
       press();
     }
   });
 
   document.addEventListener('keyup', (e) => {
     if (e.code !== 'Space' || isTyping(e.target)) return;
+    if (e.target === $('#smart-cube-btn') && T.state === 'idle') return;
     if (!timerActive() && T.state === 'idle') return;
     e.preventDefault();
     release();
@@ -685,7 +816,7 @@
   $('#timer-area').addEventListener(
     'touchstart',
     (e) => {
-      if (settings().input === 'typing' || !timerActive() || T.state === 'running') return;
+      if (settings().input === 'typing' || !timerActive() || T.state === 'running' || smartTiming()) return;
       if (touchIgnored(e.target)) return;
       e.preventDefault();
       press();
@@ -695,7 +826,7 @@
   document.addEventListener(
     'touchstart',
     (e) => {
-      if (T.state !== 'running') return;
+      if (T.state !== 'running' || smartTiming()) return;
       e.preventDefault();
       stop(true);
     },
@@ -709,7 +840,7 @@
   document.addEventListener('touchcancel', abortHold);
   // Mouse users can stop the running timer by clicking anywhere.
   document.addEventListener('mousedown', () => {
-    if (T.state === 'running') stop(false);
+    if (T.state === 'running' && !smartTiming()) stop(false);
   });
 
   $('#type-form').addEventListener('submit', (e) => {
@@ -828,7 +959,8 @@
     const typing = settings().input === 'typing';
     $('#type-form').hidden = !typing;
     timerEl.hidden = typing;
-    hint();
+    renderSmartCube();
+    updateSmartTarget();
   }
 
   const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -923,6 +1055,7 @@
   const modal = $('#modal');
 
   function openModal(title, build) {
+    if (smartTiming() && T.state !== 'idle') cancelTimer();
     $('#modal-title').textContent = title;
     const body = $('#modal-body');
     body.replaceChildren();
@@ -933,7 +1066,68 @@
   modal.addEventListener('close', () => {
     window.Charts.hideTip();
     if (currentView === 'timer') document.activeElement && document.activeElement.blur();
+    const attempt = smart.attempt;
+    if (attempt && smart.cube && !modal.open) disconnectSmartCube().then(() => finishCubeAttempt(attempt));
+    if (smartTiming()) updateSmartReadiness();
   });
+
+  function openSmartCube() {
+    openModal('Connect a smart cube', (body) => {
+      if (!window.isSecureContext || !navigator.bluetooth?.requestDevice) {
+        body.append(h('p', { class: 'muted small' }, 'Use Chrome or Edge with Web Bluetooth enabled. Open Cube Timer over HTTPS or at localhost.'));
+        return;
+      }
+
+      const address = h('input', { type: 'text', id: 'cube-address', autocomplete: 'off', spellcheck: 'false', placeholder: 'AA:BB:CC:DD:EE:FF' });
+      const status = h('p', { class: 'muted small', role: 'status' }, 'Loading Bluetooth support…');
+      let driver;
+      const connect = button('Choose cube', async () => {
+        const attempt = { address, status, connect };
+        smart.attempt = attempt;
+        connect.disabled = address.disabled = true;
+        status.textContent = 'Waiting for the cube…';
+        renderSmartCube();
+        if (metroSettings().auto) metro.prime();
+        try {
+          const cube = await SmartCube.connect(driver, address.value);
+          if (!modal.open || !status.isConnected) {
+            await cube.disconnect();
+            finishCubeAttempt(attempt);
+            return;
+          }
+          smart.cube = cube;
+          renderSmartCube();
+          status.textContent = 'Reading the cube state…';
+          cube.listen(handleCubeEvent);
+        } catch (error) {
+          if (smart.cube) await disconnectSmartCube();
+          finishCubeAttempt(attempt, error.name === 'NotFoundError'
+            ? 'No cube was selected. Wake the cube and try again.'
+            : error.message || 'Could not connect to the cube.');
+        }
+      }, 'btn primary', { disabled: true });
+      address.addEventListener('keydown', (event) => {
+        if (event.code !== 'Enter' || event.isComposing) return;
+        event.preventDefault();
+        connect.click();
+      });
+
+      body.append(
+        h('p', { class: 'muted small' }, 'Close CubeStation and turn the white face of your GAN iCarry 4 to wake it.'),
+        h('div', { class: 'settings-grid' }, h('label', { for: address.id }, 'Bluetooth address (if needed)'), address),
+        status,
+        h('div', { class: 'row end' }, connect)
+      );
+
+      SmartCube.loadDriver().then((module) => {
+        driver = module;
+        status.textContent = '';
+        connect.disabled = false;
+      }).catch(() => {
+        status.textContent = 'Could not load Bluetooth support. Check the internet connection and reload Cube Timer.';
+      });
+    });
+  }
 
   function openSolve(i) {
     const s = session();
@@ -1030,6 +1224,7 @@
   }
 
   function switchSession(id) {
+    if (smart.cube && T.state !== 'idle') cancelTimer();
     db.current = id;
     save();
     compute();
@@ -1037,6 +1232,7 @@
     solvesLimit = 150;
     renderAll();
     showLastTime();
+    renderSmartCube();
   }
 
   function openSessions() {
@@ -1456,6 +1652,7 @@
     $('#view-history').hidden = v !== 'history';
     window.Charts.hideTip();
     if (v === 'history') renderHistory();
+    if (v === 'timer' && smartTiming()) updateSmartReadiness();
     if (v === 'timer' && settings().input === 'typing') $('#time-input').focus();
   }
 
@@ -1489,14 +1686,21 @@
   $('#session-btn').addEventListener('click', openSessions);
   $('#settings-btn').addEventListener('click', openSettings);
   $('#theme-btn').addEventListener('click', openSchemes);
+  $('#smart-cube-btn').addEventListener('click', () => {
+    if (smart.attempt || smart.closing) return;
+    if (smart.cube) disconnectSmartCube();
+    else openSmartCube();
+  });
 
   $('#next-scramble').addEventListener('click', () => {
+    if (smartTiming() && T.state !== 'idle') cancelTimer();
     if (scr.idx < scr.list.length - 1) {
       scr.idx++;
       renderScramble();
     } else newScramble();
   });
   $('#prev-scramble').addEventListener('click', () => {
+    if (smartTiming() && T.state !== 'idle') cancelTimer();
     if (scr.idx > 0) {
       scr.idx--;
       renderScramble();
@@ -1619,6 +1823,7 @@
     if (e.key !== STORAGE_KEY || T.state !== 'idle') return;
     db = load();
     applyTheme();
+    applyInputMode();
     applyMetroSettings();
     renderMetronome();
     compute();

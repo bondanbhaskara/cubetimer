@@ -184,6 +184,7 @@ body.at-timer { height: 100vh; height: 100dvh; overflow: hidden; }
 .scramble-text.xlong { font-size: 14px; }
 .scramble-tools { display: flex; justify-content: center; gap: 8px; margin-top: 4px; transition: opacity 0.2s; }
 .scramble-tools .link-btn { color: var(--muted); font-size: 12px; }
+.smart-cube-status { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
 
 .timer-area {
   flex: 1;
@@ -422,6 +423,7 @@ body.solving .topbar,
 body.solving .sidebar,
 body.solving .scramble-bar,
 body.solving .scramble-tools,
+body.solving .smart-cube-status,
 body.solving .preview,
 body.solving .metronome,
 body.solving .last-actions,
