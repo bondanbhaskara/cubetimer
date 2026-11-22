@@ -6,6 +6,9 @@
 
   const S = window.Stats;
   const { PUZZLES } = window.Scramble;
+  const SmartCube = window.SmartCube;
+  const Smart = window.SmartAnalysis;
+  const AI = window.AICoach;
 
   const STORAGE_KEY = 'cubetimer.v1';
   const AVERAGES = [
@@ -116,7 +119,14 @@
     const p = x.p === 1 || x.p === 2 ? x.p : 0;
     const out = { t: Math.round(x.t), p, s: String(x.s || ''), d: Number(x.d) || Date.now() };
     if (x.c) out.c = String(x.c);
+    const trace = Smart.cleanTrace(x.smart, out.s, out.t);
+    if (trace) out.smart = trace;
     return out;
+  }
+
+  function cleanDrill(drill, puzzle) {
+    if (!['333', '333oh'].includes(puzzle) || typeof drill?.name !== 'string') return null;
+    return Smart.drillSetup(drill.algorithm) ? { name: drill.name.slice(0, 60), algorithm: drill.algorithm } : null;
   }
 
   function normalize(d) {
@@ -129,6 +139,7 @@
         puzzle: PUZZLES[s.puzzle] ? s.puzzle : '333',
         solves: s.solves.map(cleanSolve).filter(Boolean),
         created: Number(s.created) || Date.now(),
+        drill: cleanDrill(s.drill, s.puzzle),
       }));
     if (!sessions.length) return null;
     const current = sessions.some((s) => s.id === d.current) ? d.current : sessions[0].id;
@@ -194,7 +205,9 @@
   }
 
   function newScramble() {
-    scr.list.push(window.Scramble.generate(session().puzzle));
+    const drill = session().drill;
+    if (drill && scr.idx >= 0) return renderScramble();
+    scr.list.push(drill ? Smart.drillSetup(drill.algorithm) : window.Scramble.generate(session().puzzle));
     if (scr.list.length > 50) scr.list.shift();
     scr.idx = scr.list.length - 1;
     renderScramble();
@@ -209,19 +222,24 @@
     el.classList.toggle('long', text.length > 110 && text.length <= 260);
     el.classList.toggle('xlong', text.length > 260);
     $('#prev-scramble').disabled = scr.idx <= 0;
+    $('#next-scramble').disabled = !!session().drill;
+    $('#edit-scramble').hidden = !!session().drill;
     renderPreview($('#preview'), session().puzzle, text);
     updateSmartTarget();
   }
 
   function renderPreview(container, puzzle, scramble) {
-    container.replaceChildren();
     const p = PUZZLES[puzzle];
     if (!p || !p.cube || !settings().preview) {
+      container.replaceChildren();
       container.hidden = true;
       return;
     }
     container.hidden = false;
-    const n = p.cube;
+    renderCubeNet(container, p.cube, window.Scramble.cubeNet(p.cube, scramble), 'Scramble state. White top, green front.');
+  }
+
+  function renderCubeNet(container, n, stickers, label) {
     const cell = 10;
     const gap = 3;
     const F = n * cell;
@@ -231,8 +249,8 @@
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Cube state after the scramble (white top, green front)');
-    for (const f of window.Scramble.cubeNet(n, scramble)) {
+    svg.setAttribute('aria-label', label);
+    for (const f of stickers) {
       const r = document.createElementNS(NS, 'rect');
       r.setAttribute('x', f.fx * (F + gap) + f.col * cell + 0.4);
       r.setAttribute('y', f.fy * (F + gap) + f.row * cell + 0.4);
@@ -243,7 +261,12 @@
       r.setAttribute('class', 'facelet');
       svg.appendChild(r);
     }
-    container.appendChild(svg);
+    container.replaceChildren(svg);
+  }
+
+  function renderFacelets(container, facelets, label) {
+    const model = window.Scramble.cubeFromFacelets(facelets);
+    renderCubeNet(container, 3, window.Scramble.modelNet(model), label);
   }
 
   /* ================= Solves ================= */
@@ -487,13 +510,16 @@
   }
 
   // awaitRelease: the stopping key/touch is still down; ignore its release.
-  function stop(awaitRelease, end = performance.now()) {
+  function stop(awaitRelease, end = performance.now(), trace = null) {
     const ms = Math.max(0, end - T.start);
     cancelAnimationFrame(T.raf);
     T.state = awaitRelease ? 'stopped' : 'idle';
     setSolving(false);
     stopAutoMetronome();
-    addSolve({ t: Math.round(ms), p: T.penalty, s: currentScramble(), d: Date.now() });
+    const solve = { t: Math.round(ms), p: T.penalty, s: currentScramble(), d: Date.now() };
+    if (trace) solve.smart = trace;
+    smart.recording = null;
+    addSolve(solve);
     newScramble();
     showLastTime();
     hint();
@@ -504,28 +530,29 @@
     clearTimeout(T.hold);
     T.inspStart = 0;
     T.state = 'idle';
+    smart.recording = null;
     setSolving(false);
     stopAutoMetronome();
     showLastTime();
+    renderLiveCube();
     hint();
   }
 
   /* ================= Smart cube ================= */
 
-  const SmartCube = window.SmartCube;
-  const smart = { cube: null, attempt: null, closing: false, target: null };
+  const smart = { cube: null, attempt: null, closing: false, guide: null, undo: [], recording: null, inspected: null };
   const smartEligible = () => settings().input === 'timer' && ['333', '333oh'].includes(session().puzzle);
   const smartTiming = () => smart.cube && smartEligible();
 
   function smartHint() {
     const { facelets } = smart.cube;
     if (!facelets) return 'Reading the cube state…';
-    if (!smart.target) return 'Use a scramble with U, R, F, D, L and B face turns.';
-    if (facelets === smart.target) return settings().inspection
+    if (!smart.guide) return 'Use a scramble with U, R, F, D, L and B face turns.';
+    if (facelets === smart.guide.target) return settings().inspection
       ? 'Match the scramble again to restart inspection'
       : 'Scramble matched. Turn the cube to start';
-    if (facelets === SmartCube.SOLVED) return 'Follow the scramble with white on top and green in front';
-    return 'Match the displayed scramble to start';
+    if (smart.guide.prefixes.has(facelets)) return 'Follow the scramble with white on top and green in front';
+    return smart.undo.length ? 'Undo the extra turns to return to the scramble' : 'Solve the cube to restart scramble guidance';
   }
 
   function renderSmartCube() {
@@ -537,23 +564,48 @@
     const name = $('#smart-cube-name');
     const label = smart.cube?.name || '';
     if (name.textContent !== label) name.textContent = label;
+    const battery = smart.cube?.battery;
+    $('#smart-cube-battery').textContent = battery == null ? '' : `Battery ${battery}%`;
+    if ($('#cube-device-info')) renderCubeInfo($('#cube-device-info'));
+    $('#smart-drills-btn').hidden = !smartEligible();
+    const drill = session().drill;
+    $('#end-drill-btn').hidden = !drill;
+    const algorithm = $('#drill-algorithm');
+    algorithm.hidden = !drill;
+    if (drill) algorithm.textContent = `${drill.name} · ${drill.algorithm}`;
     if (!smart.cube) $('#smart-cube-move').textContent = '';
   }
 
   function updateSmartTarget() {
-    const text = currentScramble();
-    smart.target = null;
-    if (smartTiming() && text && text.trim().split(/\s+/).every((move) => SmartCube.FACE_TURN.test(move))) {
-      const target = window.Scramble.cubeFacelets(window.Scramble.applyScramble(3, text));
-      if (target !== SmartCube.SOLVED) smart.target = target;
-    }
+    smart.guide = smartTiming() ? Smart.scrambleGuide(currentScramble()) : null;
+    smart.undo = [];
     updateSmartReadiness();
   }
 
+  function renderLiveCube() {
+    const cube = smart.cube;
+    const live = $('#live-cube');
+    live.hidden = !smartTiming() || !cube.facelets;
+    if (!live.hidden) renderCubeNet($('#live-cube-net'), 3, window.Scramble.modelNet(cube.model), 'Current cube state');
+    const guide = $('#scramble-guide');
+    guide.hidden = live.hidden || !smart.guide || T.state !== 'idle';
+    if (guide.hidden) return;
+    const step = smart.guide.prefixes.get(cube.facelets);
+    const undo = smart.undo.at(-1);
+    guide.textContent = step
+      ? step.next ? `${step.index} / ${smart.guide.count} · Next ${step.next}` : 'Scramble matched'
+      : undo ? `Undo ${undo}` : 'Off scramble';
+  }
+
   function updateSmartReadiness() {
+    renderLiveCube();
+    const targetMatched = smart.guide && smart.cube.facelets === smart.guide.target;
+    if (!targetMatched) smart.inspected = null;
     if (T.state !== 'idle') return;
-    if (smartTiming() && smart.target && smart.cube.facelets === smart.target && settings().inspection && timerActive()) {
+    if (targetMatched && smart.inspected !== smart.guide.target && settings().inspection && timerActive()) {
+      smart.inspected = smart.guide.target;
       beginInspection();
+      $('#scramble-guide').hidden = true;
     } else {
       hint();
     }
@@ -563,7 +615,7 @@
     const cube = smart.cube;
     const timing = smartTiming();
     smart.cube = null;
-    smart.target = null;
+    smart.guide = null;
     if (timing && T.state !== 'idle') cancelTimer();
     if (cube) smart.closing = true;
     renderSmartCube();
@@ -594,6 +646,11 @@
       return;
     }
 
+    if (event.type === 'device') {
+      renderSmartCube();
+      return;
+    }
+
     if (event.type === 'state' || event.type === 'syncing') {
       if (smartTiming() && T.state !== 'idle') {
         cancelTimer();
@@ -606,6 +663,7 @@
         }
         finishCubeAttempt(attempt);
         modal.close();
+        smart.cube.readDeviceInfo();
       }
       if (event.type === 'syncing') $('#smart-cube-move').textContent = '';
       updateSmartTarget();
@@ -613,21 +671,39 @@
     }
 
     $('#smart-cube-move').textContent = `Last turn ${event.move}`;
-    if (!smartTiming() || !timerActive() || !smart.target) return;
-    const timedMove = Number.isFinite(event.time);
-    if (event.previous === smart.target && (inspecting() || (T.state === 'idle' && !settings().inspection))) {
-      if (!timedMove) {
+    if (!smart.guide) return renderLiveCube();
+    const { facelets } = smart.cube;
+    if (smart.guide.prefixes.has(facelets)) smart.undo = [];
+    else if (T.state !== 'running') {
+      if (smart.undo.at(-1) === event.move) smart.undo.pop();
+      else if (smart.undo.length || smart.guide.prefixes.has(event.previous)) smart.undo.push(Smart.inverse(event.move));
+    }
+    if (!timerActive()) return renderLiveCube();
+    if (event.previous === smart.guide.target && (inspecting() || (T.state === 'idle' && !settings().inspection))) {
+      if (!Number.isFinite(event.time)) {
         cancelTimer();
+        renderLiveCube();
         toast('The starting turn arrived late. Match the scramble again to retry.');
         return;
       }
+      const inspection = inspecting() ? Math.max(0, Math.floor(event.time - T.inspStart)) : null;
       startSolve(event.time);
+      if (T.state === 'running') smart.recording = { events: [], inspection };
     }
-    if (T.state === 'running' && smart.cube.facelets === SmartCube.SOLVED) {
-      if (timedMove) stop(false, event.time);
-      else {
+    if (smart.recording) {
+      const { events, inspection } = smart.recording;
+      events.push(event);
+      if (events.length > Smart.MAX_TURNS) {
         cancelTimer();
-        toast('The final turn arrived late. The solve was canceled.');
+        toast('The solve exceeded the turn limit and was canceled.');
+      } else if (facelets === SmartCube.SOLVED) {
+        const trace = Smart.finishTrace(events, inspection);
+        if (trace) stop(false, T.start + trace.moves.at(-1)[1], trace);
+        else {
+          cancelTimer();
+          toast('The final turn had no timestamp. The solve was canceled.');
+        }
+        return renderLiveCube();
       }
     }
     updateSmartReadiness();
@@ -793,7 +869,7 @@
       return;
     }
     if (e.code === 'Space') {
-      if (e.target === $('#smart-cube-btn') && T.state === 'idle') return;
+      if (e.target.closest?.('button') && T.state === 'idle') return;
       e.preventDefault();
       if (e.repeat || settings().input === 'typing' || smartTiming()) return;
       press();
@@ -802,7 +878,7 @@
 
   document.addEventListener('keyup', (e) => {
     if (e.code !== 'Space' || isTyping(e.target)) return;
-    if (e.target === $('#smart-cube-btn') && T.state === 'idle') return;
+    if (e.target.closest?.('button') && T.state === 'idle') return;
     if (!timerActive() && T.state === 'idle') return;
     e.preventDefault();
     release();
@@ -1053,8 +1129,11 @@
   /* ================= Modals ================= */
 
   const modal = $('#modal');
+  let coachConfig = null;
+  let coachRequest = null;
 
   function openModal(title, build) {
+    coachRequest?.abort();
     if (smartTiming() && T.state !== 'idle') cancelTimer();
     $('#modal-title').textContent = title;
     const body = $('#modal-body');
@@ -1064,6 +1143,7 @@
   }
 
   modal.addEventListener('close', () => {
+    if (!modal.open) coachRequest?.abort();
     window.Charts.hideTip();
     if (currentView === 'timer') document.activeElement && document.activeElement.blur();
     const attempt = smart.attempt;
@@ -1129,6 +1209,265 @@
     });
   }
 
+  function renderCubeInfo(container) {
+    const cube = smart.cube;
+    if (!cube) {
+      container.textContent = 'Cube disconnected.';
+      return;
+    }
+    const hardware = cube.hardware;
+    const entries = [
+      ['Bluetooth name', cube.name],
+      ['Battery', cube.battery == null ? 'Unavailable' : `${cube.battery}%`],
+      ['Model', hardware?.hardwareName],
+      ['Firmware', hardware?.softwareVersion],
+      ['Hardware version', hardware?.hardwareVersion],
+      ['Gyroscope', hardware?.gyroSupported == null ? null : hardware.gyroSupported ? 'Reported by cube' : 'Unavailable'],
+    ];
+    container.replaceChildren(...entries.filter(([, value]) => value).flatMap(([label, value]) =>
+      [h('dt', null, label), h('dd', null, value)]));
+  }
+
+  function openCubeInfo() {
+    openModal('Cube info', (body) => {
+      const info = h('dl', { id: 'cube-device-info', class: 'cube-device-info' });
+      renderCubeInfo(info);
+      body.append(info, h('div', { class: 'row end' },
+        button('Refresh device info', () => smart.cube?.readDeviceInfo()),
+        button('Resync cube state', () => {
+          smart.cube?.sync();
+          modal.close();
+        })
+      ));
+    });
+  }
+
+  function openDrills() {
+    openModal('Algorithm drills', (body) => {
+      const preset = h('select', { id: 'drill-preset' },
+        ...Object.keys(Smart.DRILLS).map((name) => h('option', { value: name }, name)),
+        h('option', { value: 'custom' }, 'Custom algorithm')
+      );
+      const notation = h('input', { id: 'drill-notation', type: 'text', maxlength: 400, spellcheck: 'false' });
+      const error = h('p', { class: 'muted small', role: 'status' });
+      notation.value = Smart.DRILLS[preset.value];
+      preset.addEventListener('change', () => {
+        notation.value = Smart.DRILLS[preset.value] || '';
+        error.textContent = '';
+        if (preset.value === 'custom') notation.focus();
+      });
+      notation.addEventListener('input', () => { preset.value = 'custom'; });
+      body.append(
+        h('p', { class: 'muted small' }, 'Follow the setup, solve the case, then repeat. Reps are saved in a separate session.'),
+        h('div', { class: 'settings-grid' },
+          h('label', { for: 'drill-preset' }, 'Case'), preset,
+          h('label', { for: 'drill-notation' }, 'Algorithm'), notation),
+        error,
+        h('div', { class: 'row end' }, button('Start drill', () => {
+          const algorithm = notation.value.trim().replace(/\s+/g, ' ');
+          if (!Smart.drillSetup(algorithm)) {
+            error.textContent = 'Enter up to 100 U, R, F, D, L or B turns that change the cube state. Prime and double turns are supported.';
+            return;
+          }
+          startDrill(preset.value === 'custom' ? 'Custom algorithm' : preset.value, algorithm);
+          modal.close();
+        }, 'btn primary'))
+      );
+    });
+  }
+
+  function startDrill(name, algorithm) {
+    const puzzle = session().puzzle;
+    let training = db.sessions.find((s) => s.puzzle === puzzle && s.drill?.algorithm === algorithm);
+    if (!training) {
+      training = newSession(uniqueName(`${name} drill`), puzzle);
+      training.drill = { name, algorithm };
+      db.sessions.push(training);
+    }
+    switchSession(training.id);
+    if (currentView !== 'timer') setView('timer');
+  }
+
+  function exitDrill() {
+    const { puzzle } = session();
+    let regular = db.sessions.find((s) => !s.drill && s.puzzle === puzzle);
+    if (!regular) {
+      regular = newSession(uniqueName(PUZZLES[puzzle].name), puzzle);
+      db.sessions.push(regular);
+    }
+    switchSession(regular.id);
+  }
+
+  const traceAnalysis = new WeakMap();
+  function analyzeSolve(solve) {
+    if (!traceAnalysis.has(solve)) {
+      const { phases, xcross, turns, tps, longestPause } = Smart.analyze(solve.s, solve.smart);
+      traceAnalysis.set(solve, { phases, xcross, turns, tps, longestPause });
+    }
+    return traceAnalysis.get(solve);
+  }
+
+  const seconds = (ms) => `${(ms / 1000).toFixed(2)} s`;
+
+  function phaseTable(rows, headers) {
+    return h('table', { class: 'smart-phase-table' },
+      h('thead', null, h('tr', null, headers.map((label) => h('th', { scope: 'col' }, label)))),
+      h('tbody', null, rows.map(([label, ...values]) => h('tr', null,
+        h('th', { scope: 'row' }, label), values.map((value) => h('td', null, value)))))
+    );
+  }
+
+  function caseComparison(phase, cases) {
+    if (!phase.case) return { phase: phase.label, skipped: true };
+    const group = cases?.get(`${phase.label}:${phase.case.key}`);
+    return {
+      phase: phase.label,
+      case: phase.case.name,
+      timeMs: phase.duration,
+      initialPauseMs: phase.pause,
+      executionMs: phase.duration - phase.pause,
+      quarterTurns: phase.turns,
+      earlierSolves: group?.count || 0,
+      earlierAverageMs: group?.averageMs ?? null,
+      earlierAveragePauseMs: group?.averagePauseMs ?? null,
+      earlierAverageExecutionMs: group?.averageExecutionMs ?? null,
+      earlierBestMs: group?.best ?? null,
+    };
+  }
+
+  function renderCaseDetails(cases, showHistory) {
+    const completed = cases.filter((item) => !item.skipped);
+    const rows = cases.map((item) => item.skipped
+      ? [`${item.phase} · Skipped`, '–', '–', '–']
+      : [`${item.phase} · ${item.case.startsWith(item.phase) ? item.case.slice(item.phase.length + 1) : item.case}`,
+        seconds(item.timeMs), seconds(item.initialPauseMs), seconds(item.executionMs)]);
+    return h('section', { class: 'case-details', 'aria-label': 'OLL and PLL cases' },
+      h('h4', null, 'OLL and PLL cases'),
+      phaseTable(rows, ['This solve', 'Time', 'Initial pause', 'Execution']),
+      showHistory && completed.length ? h('div', null,
+        h('p', { class: 'muted small' }, 'Earlier completed solves of the same case in this session.'),
+        phaseTable(completed.map((item) => [
+          item.case, String(item.earlierSolves), item.earlierAverageMs == null ? '–' : seconds(item.earlierAverageMs),
+          item.earlierAveragePauseMs == null ? '–' : seconds(item.earlierAveragePauseMs),
+          item.earlierAverageExecutionMs == null ? '–' : seconds(item.earlierAverageExecutionMs),
+        ]), ['Case', 'Solves', 'Avg time', 'Avg pause', 'Avg execution'])) : null);
+  }
+
+  function renderReplay(solve, earlierSolves = null) {
+    const trace = solve.smart;
+    const info = Smart.analyze(solve.s, trace);
+    const prior = earlierSolves && Smart.caseStats(earlierSolves.filter((item) => item.smart && item.p !== S.PEN_DNF).map(analyzeSolve));
+    const cases = info.phases.filter(({ label }) => label === 'OLL' || label === 'PLL').map((phase) => caseComparison(phase, prior));
+    const last = trace.moves.length;
+    const net = h('div', { class: 'smart-replay-net' });
+    const position = h('p', { class: 'small' });
+    const slider = h('input', { type: 'range', min: 0, max: last, value: 0, 'aria-label': 'Replay turn' });
+    const speed = h('select', { 'aria-label': 'Replay speed' },
+      h('option', { value: '0.5' }, '0.5×'),
+      h('option', { value: '1', selected: true }, '1×'),
+      h('option', { value: '2' }, '2×'));
+    let index = 0;
+    let frame = 0;
+    const play = button('Play', togglePlayback);
+    function show(at) {
+      index = at;
+      slider.value = at;
+      const move = at ? trace.moves[at - 1][0] : 'Setup';
+      position.textContent = `${at} / ${last} · ${move} · ${seconds(info.times[at])}`;
+      slider.setAttribute('aria-valuetext', position.textContent);
+      renderFacelets(net, info.states[at], `Cube after ${at} recorded turns`);
+    }
+    function pause() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      play.textContent = 'Play';
+    }
+    function seek(at) {
+      pause();
+      show(Math.max(0, Math.min(last, at)));
+    }
+    function togglePlayback() {
+      if (frame) return pause();
+      if (index === last) show(0);
+      const origin = performance.now();
+      const offset = info.times[index];
+      const rate = Number(speed.value);
+      play.textContent = 'Pause';
+      const tick = (now) => {
+        if (!modal.open || !net.isConnected) return pause();
+        const elapsed = offset + (now - origin) * rate;
+        let next = index;
+        while (next < last && info.times[next + 1] <= elapsed) next++;
+        if (next !== index) show(next);
+        if (next === last) return pause();
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+    }
+    slider.addEventListener('input', () => seek(+slider.value));
+    speed.addEventListener('change', pause);
+    show(0);
+    const rows = info.phases.map(({ label, end, duration, turns, pause: gap, case: detected }) => [
+      turns ? button(detected ? detected.name.startsWith(label) ? detected.name : `${label} · ${detected.name}` : label,
+        () => seek(end), 'link-btn', { 'aria-label': `Jump to the end of ${label}` }) : label,
+      turns ? seconds(duration) : '–',
+      turns || '–',
+      turns ? seconds(gap) : '–',
+      turns ? seconds(duration - gap) : '–',
+    ]);
+    const clock = trace.clock === 'cube' ? 'Cube clock' : 'Browser clock';
+    return h('section', { class: 'solve-analysis', 'aria-label': 'Smart cube analysis' },
+      h('h3', null, 'Smart cube analysis'),
+      h('div', { class: 'smart-metrics' },
+        kpi('Quarter turns', String(info.turns)),
+        kpi('Turns per second', info.tps == null ? '–' : info.tps.toFixed(2)),
+        kpi('Longest gap', seconds(info.longestPause)),
+        trace.inspection != null ? kpi('Inspection', seconds(trace.inspection)) : null),
+      h('p', { class: 'muted small' }, `${clock}${trace.estimated ? ` · ${trace.estimated} estimated turn timestamps` : ''}`),
+      h('h4', null, 'Inferred CFOP splits'),
+      h('p', { class: 'muted small' }, `${info.crossColor} cross${info.xcross ? ' · X-cross detected' : ''}. Initial pause measures the gap to the phase’s first turn.`),
+      phaseTable(rows, ['Phase', 'Time', 'Turns', 'Initial pause', 'Execution']),
+      renderCaseDetails(cases, !!prior),
+      h('h4', null, 'Solve replay'),
+      net, position, slider,
+      h('div', { class: 'row replay-controls' },
+        button('Previous turn', () => seek(index - 1)), play,
+        button('Next turn', () => seek(index + 1)), speed),
+      earlierSolves ? renderCoach({
+        scope: 'single solve', timeMs: solve.t, penalty: ['OK', '+2', 'DNF'][solve.p],
+        inspectionMs: trace.inspection, timingSource: trace.clock, estimatedTimestamps: trace.estimated,
+        quarterTurns: info.turns, turnsPerSecond: info.tps, longestGapMs: info.longestPause,
+        phases: info.phases.filter((phase) => phase.turns).map((phase) => ({
+          phase: phase.label, timeMs: phase.duration, initialPauseMs: phase.pause,
+          executionMs: phase.duration - phase.pause, quarterTurns: phase.turns,
+        })),
+        cases,
+      }) : null);
+  }
+
+  const REPLAY_HASH = '#replay=';
+  function copyReplayLink(solve) {
+    const { t, p, s, smart: trace } = solve;
+    const url = new URL(location.href);
+    url.hash = REPLAY_HASH + encodeURIComponent(JSON.stringify({ t, p, s, smart: trace }));
+    if (url.hash.length > 16000) return toast('This replay is too long to share as a link.');
+    copyText(url.href);
+  }
+
+  function openSharedReplay() {
+    if (!location.hash.startsWith(REPLAY_HASH) || location.hash.length > 16000) return;
+    try {
+      const solve = cleanSolve(JSON.parse(decodeURIComponent(location.hash.slice(REPLAY_HASH.length))));
+      if (!solve?.smart) throw new Error('Invalid replay');
+      openModal('Shared solve replay', (body) => {
+        body.append(h('div', { class: 'big-time' }, fmtSolve(solve)),
+          h('p', { class: 'scr' }, solve.s), renderReplay(solve));
+      });
+    } catch {
+      toast('Could not open this replay link.');
+    }
+  }
+
   function openSolve(i) {
     const s = session();
     const sv = s.solves[i];
@@ -1159,7 +1498,8 @@
       body.append(pens, h('p', { class: 'scr' }, sv.s || '(no scramble)'));
       const pv = h('div', { class: 'preview-inline' });
       renderPreview(pv, s.puzzle, sv.s || '');
-      if (!pv.hidden) body.append(pv);
+      if (sv.smart) body.append(renderReplay(sv, s.solves.slice(0, i)));
+      else if (!pv.hidden) body.append(pv);
       const note = h('textarea', { rows: '2', placeholder: 'Comment (optional)' });
       note.value = sv.c || '';
       note.addEventListener('input', () => {
@@ -1178,6 +1518,7 @@
             if (deleteSolve(i)) modal.close();
           }, 'btn danger'),
           button('Copy', () => copyText(`${fmtSolve(sv)}   ${sv.s}`)),
+          sv.smart ? button('Copy replay link', () => copyReplayLink(sv)) : null,
           button('Done', () => modal.close(), 'btn primary')
         )
       );
@@ -1215,6 +1556,90 @@
         idx.map((i, k) => `${k + 1}. ${trimmed.has(i) ? '(' + fmtSolve(solves[i]) + ')' : fmtSolve(solves[i])}   ${solves[i].s.replace(/\n/g, ' ')}`).join('\n');
       body.append(h('div', { class: 'row end' }, button('Copy', () => copyText(text)), button('Done', () => modal.close(), 'btn primary')));
     });
+  }
+
+  function renderCoach(metrics) {
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const output = h('div', { class: 'coach-output', hidden: true });
+    const controls = h('div', { class: 'row' });
+    const description = coachConfig
+      ? `Sends the displayed timing and case metrics to ${new URL(coachConfig.endpoint).host}. Requests may incur provider charges.`
+      : 'Configure an OpenAI-compatible API in Settings to get practice advice.';
+    if (coachConfig) {
+      const ask = button('Get AI advice', async () => {
+        if (coachRequest) return;
+        const request = coachRequest = new AbortController();
+        const timeout = setTimeout(() => request.abort('timeout'), 45000);
+        ask.disabled = true;
+        cancel.hidden = false;
+        output.hidden = true;
+        output.textContent = '';
+        status.textContent = 'Waiting for AI advice…';
+        try {
+          const advice = await AI.review(coachConfig, metrics, request.signal);
+          if (request.signal.aborted || !output.isConnected) return;
+          output.textContent = advice;
+          output.hidden = false;
+          status.textContent = 'AI advice ready.';
+        } catch (error) {
+          if (status.isConnected) {
+            status.textContent = request.signal.aborted
+              ? request.signal.reason === 'timeout' ? 'The API request timed out.' : 'Canceled.'
+              : error.message;
+          }
+        } finally {
+          clearTimeout(timeout);
+          if (coachRequest === request) coachRequest = null;
+          ask.disabled = false;
+          cancel.hidden = true;
+        }
+      }, 'btn primary');
+      const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
+      controls.append(ask, cancel);
+    }
+    controls.append(button('AI settings', () => openSettings(true)));
+    return h('section', { class: 'ai-coach', 'aria-label': 'AI coach' },
+      h('h4', null, 'AI coach'), h('p', { class: 'muted small' }, description), controls, status, output);
+  }
+
+  function renderCoachSettings() {
+    const url = h('input', { id: 'coach-url', type: 'url', placeholder: 'https://api.openai.com/v1', autocomplete: 'off', spellcheck: 'false' });
+    const model = h('input', { id: 'coach-model', type: 'text', placeholder: 'Provider model ID', autocomplete: 'off', spellcheck: 'false' });
+    const token = h('input', { id: 'coach-token', type: 'password', autocomplete: 'off', spellcheck: 'false' });
+    url.value = coachConfig?.endpoint || '';
+    model.value = coachConfig?.model || '';
+    const status = h('p', { class: 'muted small', role: 'status' },
+      coachConfig ? 'Configured for this tab. Leave the token blank to keep it for this endpoint.' : '');
+    const saveConfig = () => {
+      try {
+        const keepToken = coachConfig && AI.endpointFor(url.value) === coachConfig.endpoint;
+        coachConfig = AI.configure(url.value, token.value || (keepToken ? coachConfig.token : ''), model.value);
+        token.value = '';
+        status.textContent = 'AI coach configured for this tab.';
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    };
+    const fields = h('div', { class: 'settings-grid' },
+      h('label', { for: url.id }, 'API URL'), url,
+      h('label', { for: model.id }, 'Model ID'), model,
+      h('label', { for: token.id }, 'API token'), token);
+    fields.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      saveConfig();
+    });
+    return h('section', { id: 'ai-settings', 'aria-labelledby': 'ai-settings-title' },
+      h('h3', { id: 'ai-settings-title', class: 'settings-section' }, 'AI coach'),
+      h('p', { class: 'muted small' }, 'Uses the OpenAI-compatible Chat Completions API. The provider must allow browser requests. The token stays in memory until the tab reloads or closes.'),
+      fields, h('div', { class: 'row' },
+        button('Save AI settings', saveConfig, 'btn primary'),
+        button('Clear AI settings', () => {
+          coachConfig = null;
+          url.value = model.value = token.value = '';
+          status.textContent = 'AI settings cleared.';
+        })),
+      status);
   }
 
   function uniqueName(base) {
@@ -1288,7 +1713,7 @@
     });
   }
 
-  function openSettings() {
+  function openSettings(focusAI = false) {
     const st = settings();
     const sel = (label, key, options, after) => {
       const id = 'set-' + key;
@@ -1325,6 +1750,7 @@
           ...sel('Color scheme', 'theme', [['auto', 'Match system (Basic / Pro)'], ...SCHEMES], applyTheme),
           ...sel('Scramble preview', 'preview', [[true, 'Show'], [false, 'Hide']], renderScramble)
         ),
+        renderCoachSettings(),
         h('div', { class: 'settings-section' }, 'Data'),
         h(
           'div',
@@ -1351,6 +1777,7 @@
         )
       );
     });
+    if (focusAI === true) $('#coach-url').focus();
   }
 
   function exportData() {
@@ -1453,6 +1880,86 @@
     return i >= 0 ? { i, v: arr[i] } : null;
   }
 
+  function renderSmartHistory(solves) {
+    const recorded = solves.filter((solve) => solve.smart && solve.p !== S.PEN_DNF);
+    const results = recorded.map(analyzeSolve);
+    $('#smart-history').hidden = !results.length;
+    if (!results.length) return;
+    const average = (values) => values.length ? S.mean(values) : null;
+    const tps = average(results.map((result) => result.tps).filter((value) => value != null));
+    const detectedCrosses = results.filter((result) => result.phases[0].turns && result.phases[0].end < result.phases.at(-1).end);
+    const xcrosses = detectedCrosses.filter((result) => result.xcross).length;
+    $('#smart-history-metrics').replaceChildren(
+      kpi('Recorded solves', String(results.length)),
+      kpi('Average quarter turns', average(results.map((result) => result.turns)).toFixed(1)),
+      kpi('Average TPS', tps == null ? '–' : tps.toFixed(2)),
+      kpi('Average longest gap', seconds(average(results.map((result) => result.longestPause)))),
+      kpi('X-cross rate', detectedCrosses.length ? `${Math.round(100 * xcrosses / detectedCrosses.length)}%` : '–',
+        detectedCrosses.length ? `${xcrosses} of ${detectedCrosses.length} detected crosses` : null)
+    );
+    const splits = results[0].phases.map(({ label }, i) => {
+      const samples = results.map((result) => result.phases[i]).filter((phase) => phase.turns);
+      if (!samples.length) return { phase: label, count: 0 };
+      return {
+        phase: label, count: samples.length,
+        averageMs: Math.round(average(samples.map((phase) => phase.duration))),
+        averagePauseMs: Math.round(average(samples.map((phase) => phase.pause))),
+        averageExecutionMs: Math.round(average(samples.map((phase) => phase.duration - phase.pause))),
+      };
+    });
+    const rows = splits.map(({ phase, count, averageMs, averagePauseMs, averageExecutionMs }) =>
+      [phase, String(count), ...[averageMs, averagePauseMs, averageExecutionMs].map((value) => value == null ? '–' : seconds(value))]);
+    const cases = [...Smart.caseStats(results).values()].sort((a, b) => b.count - a.count || b.averageMs - a.averageMs);
+    const historyMetrics = {
+      scope: 'filtered session history', recordedSolves: recorded.length, averageTurnsPerSecond: tps,
+      averageQuarterTurns: average(results.map((result) => result.turns)),
+      estimatedTimingSolves: recorded.filter((solve) => solve.smart.estimated).length,
+      phases: splits, distinctCases: cases.length,
+      cases: cases.slice(0, 16).map(({ name, type, count, averageMs, averagePauseMs, averageExecutionMs, best }) =>
+        ({ name, type, count, averageMs, averagePauseMs, averageExecutionMs, bestMs: best })),
+    };
+    $('#smart-history-phases').replaceChildren(
+      h('p', { class: 'muted small' }, 'Inferred CFOP splits for completed smart-cube solves in this range.'),
+      phaseTable(rows, ['Phase', 'Solves', 'Avg time', 'Avg initial pause', 'Avg execution']),
+      cases.length ? renderCaseHistory(cases) : null,
+      session().drill ? null : trainingFocus(recorded, cases),
+      h('div', { class: 'row ai-history-actions' }, button('AI practice review', () =>
+        openModal('AI practice review', (body) => body.append(renderCoach(historyMetrics)))))
+    );
+  }
+
+  function renderCaseHistory(cases) {
+    return h('section', { class: 'case-details', 'aria-label': 'OLL and PLL case statistics' },
+      h('h3', null, 'OLL and PLL case statistics'),
+      ['OLL', 'PLL'].map((type) => {
+        const rows = cases.filter((item) => item.type === type).map((item) => [
+          item.name, String(item.count), seconds(item.averageMs), seconds(item.best),
+          seconds(item.averagePauseMs), seconds(item.averageExecutionMs),
+        ]);
+        return rows.length ? h('div', null, h('h4', null, type),
+          phaseTable(rows, ['Case', 'Solves', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])) : null;
+      }));
+  }
+
+  function trainingFocus(solves, cases) {
+    const ranked = cases.filter(({ name, example }) => name !== 'AUF only' && example)
+      .map((record) => {
+        const { index, start, end } = record.example;
+        const algorithm = solves[index].smart.moves.slice(start, end).map(([move]) => move).join(' ');
+        return { ...record, algorithm };
+      })
+      .filter(({ algorithm }) => Smart.drillSetup(algorithm))
+      .sort((a, b) => b.averageMs - a.averageMs);
+    const targets = ['OLL', 'PLL'].map((type) => ranked.find((record) => record.type === type)).filter(Boolean);
+    if (!targets.length) return null;
+    return h('section', { class: 'training-focus', 'aria-label': 'Training focus' },
+      h('h3', null, 'Training focus'),
+      ...targets.map(({ name, type, count, averageMs, averagePauseMs, algorithm }) => h('div', { class: 'training-target' },
+        h('div', null, h('strong', null, name),
+          h('p', { class: 'muted small' }, `${count} ${count === 1 ? 'solve' : 'solves'} · ${seconds(averageMs)} avg ${type} · ${seconds(averagePauseMs)} avg initial pause`)),
+        button(`Drill ${type}`, () => startDrill(name, algorithm), 'btn'))));
+  }
+
   function renderHistory() {
     const [a, b] = rangeBounds();
     const solves = session().solves.slice(a, b);
@@ -1492,6 +1999,7 @@
       ),
     ];
     $('#kpis').replaceChildren(...kp);
+    renderSmartHistory(solves);
 
     // Progress chart
     renderLegend();
@@ -1662,18 +2170,15 @@
   $('#puzzle-select').addEventListener('change', (e) => {
     const v = e.target.value;
     const s = session();
-    if (!s.solves.length) {
+    const existing = db.sessions.filter((x) => x.puzzle === v && !x.drill).sort((x, y) => y.created - x.created)[0];
+    if (existing) {
+      switchSession(existing.id);
+      toast(`Switched to session "${existing.name}"`);
+    } else if (!s.solves.length && !s.drill) {
       const isDefaultName = Object.values(PUZZLES).some((p) => p.name === s.name);
       s.puzzle = v;
       if (isDefaultName) s.name = uniqueName(PUZZLES[v].name);
       switchSession(s.id);
-      return;
-    }
-    // Keep stats clean: a session holds one puzzle. Reuse or create one.
-    const existing = db.sessions.filter((x) => x.puzzle === v).sort((x, y) => y.created - x.created)[0];
-    if (existing) {
-      switchSession(existing.id);
-      toast(`Switched to session "${existing.name}"`);
     } else {
       const ns = newSession(uniqueName(PUZZLES[v].name), v);
       db.sessions.push(ns);
@@ -1691,6 +2196,9 @@
     if (smart.cube) disconnectSmartCube();
     else openSmartCube();
   });
+  $('#smart-cube-info').addEventListener('click', openCubeInfo);
+  $('#smart-drills-btn').addEventListener('click', openDrills);
+  $('#end-drill-btn').addEventListener('click', exitDrill);
 
   $('#next-scramble').addEventListener('click', () => {
     if (smartTiming() && T.state !== 'idle') cancelTimer();
@@ -1821,7 +2329,10 @@
   // Other tabs editing the same storage.
   window.addEventListener('storage', (e) => {
     if (e.key !== STORAGE_KEY || T.state !== 'idle') return;
+    const previous = session();
     db = load();
+    const current = session();
+    if (previous.id !== current.id || previous.puzzle !== current.puzzle || previous.drill?.algorithm !== current.drill?.algorithm) resetScrambles();
     applyTheme();
     applyInputMode();
     applyMetroSettings();
@@ -1844,4 +2355,6 @@
   renderAll();
   showLastTime();
   hint();
+  openSharedReplay();
+  window.addEventListener('hashchange', openSharedReplay);
 })();

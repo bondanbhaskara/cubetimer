@@ -213,10 +213,9 @@
   }
 
   // Returns the cube net as data: a list of facelets with grid coordinates.
-  function cubeNet(n, scramble) {
-    const cube = applyScramble(n, scramble);
+  function modelNet(cube) {
     return cube.stickers.map((st) => {
-      const [face, row, col] = netPosition(st, n);
+      const [face, row, col] = netPosition(st, cube.n);
       const [fx, fy] = NET_ORIGIN[face];
       return { face, row, col, fx, fy, color: st.color };
     });
@@ -225,7 +224,8 @@
   global.Scramble = {
     PUZZLES,
     generate: (puzzle) => (PUZZLES[puzzle] || PUZZLES['333']).gen(),
-    cubeNet,
+    cubeNet: (n, scramble) => modelNet(applyScramble(n, scramble)),
+    modelNet,
     cubeFacelets,
     cubeFromFacelets,
     applyMove,

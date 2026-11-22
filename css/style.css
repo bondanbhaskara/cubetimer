@@ -182,9 +182,18 @@ body.at-timer { height: 100vh; height: 100dvh; overflow: hidden; }
 }
 .scramble-text.long { font-size: 17px; }
 .scramble-text.xlong { font-size: 14px; }
-.scramble-tools { display: flex; justify-content: center; gap: 8px; margin-top: 4px; transition: opacity 0.2s; }
+.scramble-tools { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 4px; transition: opacity 0.2s; }
 .scramble-tools .link-btn { color: var(--muted); font-size: 12px; }
-.smart-cube-status { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+.smart-cube-status { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+.smart-cube-status .link-btn { font-size: inherit; }
+.drill-algorithm, .scramble-guide { margin: 6px 0 0; text-align: center; overflow-wrap: anywhere; }
+.scramble-guide { font-weight: 600; }
+.live-cube { align-self: center; width: 144px; margin: 4px auto; text-align: center; }
+.live-cube svg, .smart-replay-net svg { display: block; width: 100%; height: auto; }
+.live-cube .facelet, .smart-replay-net .facelet { stroke: #0009; stroke-width: 0.6; }
+.cube-device-info { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
+.cube-device-info dt { color: var(--muted); }
+.cube-device-info dd { margin: 0; overflow-wrap: anywhere; }
 
 .timer-area {
   flex: 1;
@@ -458,6 +467,30 @@ body.solving .stage { border-color: transparent; }
 .kpi-label { font-size: 12px; color: var(--muted); }
 .kpi-value { font-size: 24px; font-weight: 600; margin-top: 2px; letter-spacing: -0.01em; }
 .kpi-sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.smart-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 126px), 1fr)); gap: 8px; }
+.smart-history { margin-top: 12px; }
+.training-focus { margin-top: 16px; }
+.training-focus h3 { font-size: 14px; }
+.training-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.training-target p { margin: 2px 0 0; }
+.smart-phase-table { width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; border-collapse: collapse; }
+.smart-phase-table :is(th, td) { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: right; }
+.smart-phase-table :is(th, td):first-child { text-align: left; }
+.smart-phase-table .link-btn { padding: 0; font-size: inherit; }
+.case-details, .ai-coach, .ai-history-actions { margin-top: 16px; }
+.case-details :is(h3, h4) { margin: 12px 0 6px; }
+.case-details th:first-child { overflow-wrap: anywhere; }
+.ai-coach { border-top: 1px solid var(--border); padding-top: 12px; }
+.ai-coach h4 { margin: 0 0 8px; }
+.ai-coach p { overflow-wrap: anywhere; }
+.coach-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); border-radius: 8px; }
+#ai-settings input { min-width: 0; }
+.solve-analysis { margin: 14px 0; }
+.solve-analysis h3, .solve-analysis h4 { margin: 14px 0 8px; }
+.solve-analysis input[type="range"] { width: 100%; accent-color: var(--accent); }
+.smart-replay-net { width: min(200px, 100%); margin: 0 auto; }
+.solve-analysis > p:has(+ input[type="range"]) { margin: 8px 0; text-align: center; }
+.replay-controls { justify-content: center; }
 
 .chart { width: 100%; min-height: 120px; }
 .chart-svg { display: block; overflow: visible; }
@@ -576,7 +609,7 @@ body.solving .stage { border-color: transparent; }
 .modal-body .big-time { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0 8px; }
 .modal-body .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .modal-body .scr { font-size: 15px; line-height: 1.5; white-space: pre-line; background: var(--surface-2); padding: 10px 12px; border-radius: 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
-.modal-body textarea, .modal-body input[type="text"] {
+.modal-body textarea, .modal-body input:is([type="text"], [type="url"], [type="password"]) {
   width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--page);
   padding: 8px 10px; resize: vertical;
 }

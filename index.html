@@ -103,12 +103,18 @@
       <div class="scramble-tools">
         <button class="link-btn" id="copy-scramble">Copy</button>
         <button class="link-btn" id="edit-scramble">Edit</button>
+        <button class="link-btn" id="smart-drills-btn" type="button" hidden>Algorithm drills</button>
+        <button class="link-btn" id="end-drill-btn" type="button" hidden>Exit drill</button>
         <button class="link-btn" id="smart-cube-btn" type="button">Connect smart cube</button>
       </div>
       <div class="smart-cube-status muted small" id="smart-cube-status" hidden>
         <span id="smart-cube-name" role="status"></span>
+        <span id="smart-cube-battery"></span>
         <span id="smart-cube-move" aria-hidden="true"></span>
+        <button class="link-btn" id="smart-cube-info" type="button">Cube info</button>
       </div>
+      <p class="drill-algorithm small muted" id="drill-algorithm" hidden></p>
+      <p class="scramble-guide small" id="scramble-guide" hidden></p>
 
       <div class="timer-area" id="timer-area">
         <div class="timer-display" id="timer-display">
@@ -178,6 +184,10 @@
       </section>
 
       <div class="preview" id="preview" aria-label="Scramble preview"></div>
+      <div class="live-cube" id="live-cube" hidden>
+        <span class="muted small">Live cube</span>
+        <div id="live-cube-net"></div>
+      </div>
     </section>
   </main>
 
@@ -221,6 +231,11 @@
 
     <div id="history-content">
       <section class="kpis" id="kpis" aria-label="Summary"></section>
+      <section class="card chart-card smart-history" id="smart-history" hidden aria-labelledby="smart-history-title">
+        <div class="card-head"><h2 id="smart-history-title">Smart cube performance</h2></div>
+        <div id="smart-history-metrics" class="smart-metrics"></div>
+        <div id="smart-history-phases"></div>
+      </section>
 
       <section class="card chart-card" aria-labelledby="progress-title">
         <div class="card-head wrap">
@@ -287,7 +302,7 @@
     <form method="dialog" class="modal-inner">
       <header class="modal-head">
         <h2 id="modal-title"></h2>
-        <button class="icon-btn ghost" value="cancel" aria-label="Close">
+        <button class="icon-btn ghost" value="cancel" formnovalidate aria-label="Close">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </header>
@@ -300,6 +315,8 @@
   <script src="js/charts.js"></script>
   <script src="js/metronome.js"></script>
   <script src="js/smart-cube.js"></script>
+  <script src="js/smart-analysis.js"></script>
+  <script src="js/ai-coach.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
