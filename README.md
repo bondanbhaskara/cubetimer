@@ -15,7 +15,7 @@ Cube Timer is a speedcubing timer you can use with a keyboard, a touchscreen, re
 
 ## Get started
 
-Use an HTTPS-hosted copy of the app or serve the repository on your computer. With Git and Python 3 installed, run:
+Use an HTTPS-hosted copy of the app, or use Git and Python 3 to run a local copy.
 
 ```bash
 git clone https://github.com/bondanbhaskara/cubetimer.git
@@ -156,7 +156,7 @@ Use the half-circle icon in the top bar for live previews, or select **Settings 
 
 ## Development
 
-Run the regression tests with a recent Node.js version:
+Use a recent version of Node.js to run the regression tests.
 
 ```bash
 node --test tests/*.test.cjs
