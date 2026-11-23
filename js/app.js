@@ -1300,13 +1300,14 @@
   const traceAnalysis = new WeakMap();
   function analyzeSolve(solve) {
     if (!traceAnalysis.has(solve)) {
-      const { phases, xcross, turns, tps, longestPause } = Smart.analyze(solve.s, solve.smart);
-      traceAnalysis.set(solve, { phases, xcross, turns, tps, longestPause });
+      const { phases, pairs, xcross, turns, tps, longestPause } = Smart.analyze(solve.s, solve.smart);
+      traceAnalysis.set(solve, { phases, pairs, xcross, turns, tps, longestPause });
     }
     return traceAnalysis.get(solve);
   }
 
   const seconds = (ms) => `${(ms / 1000).toFixed(2)} s`;
+  const cfopSplits = ({ phases, pairs }) => phases.flatMap((phase) => phase.label === 'F2L' ? [phase, ...pairs] : [phase]);
 
   function phaseTable(rows, headers) {
     return h('table', { class: 'smart-phase-table' },
@@ -1406,11 +1407,11 @@
     slider.addEventListener('input', () => seek(+slider.value));
     speed.addEventListener('change', pause);
     show(0);
-    const rows = info.phases.map(({ label, end, duration, turns, pause: gap, case: detected }) => [
+    const rows = cfopSplits(info).map(({ label, end, duration, turns, pause: gap, case: detected }) => [
       turns ? button(detected ? detected.name.startsWith(label) ? detected.name : `${label} · ${detected.name}` : label,
         () => seek(end), 'link-btn', { 'aria-label': `Jump to the end of ${label}` }) : label,
-      turns ? seconds(duration) : '–',
-      turns || '–',
+      seconds(duration),
+      turns,
       turns ? seconds(gap) : '–',
       turns ? seconds(duration - gap) : '–',
     ]);
@@ -1848,19 +1849,22 @@
       kpi('X-cross rate', detectedCrosses.length ? `${Math.round(100 * xcrosses / detectedCrosses.length)}%` : '–',
         detectedCrosses.length ? `${xcrosses} of ${detectedCrosses.length} detected crosses` : null)
     );
-    const splits = results[0].phases.map(({ label }, i) => {
-      const samples = results.map((result) => result.phases[i]).filter((phase) => phase.turns);
+    const solveSplits = results.map(cfopSplits);
+    const splits = solveSplits[0].map(({ label }, i) => {
+      const samples = solveSplits.map((sum) => sum[i]).filter((phase) => phase.turns);
       if (!samples.length) return { phase: label, count: 0 };
       return {
         phase: label, count: samples.length,
+        averageTurns: average(samples.map((phase) => phase.turns)),
         averageMs: Math.round(average(samples.map((phase) => phase.duration))),
         averagePauseMs: Math.round(average(samples.map((phase) => phase.pause))),
         averageExecutionMs: Math.round(average(samples.map((phase) => phase.duration - phase.pause))),
       };
     });
-    const rows = splits.map(({ phase, count, averageMs, averagePauseMs, averageExecutionMs }) =>
-      [phase, String(count), ...[averageMs, averagePauseMs, averageExecutionMs].map((value) => value == null ? '–' : seconds(value))]);
-    const cases = [...Smart.caseStats(results).values()].sort((a, b) => b.count - a.count || b.averageMs - a.averageMs);
+    const rows = splits.map(({ phase, count, averageTurns, averageMs, averagePauseMs, averageExecutionMs }) =>
+      [phase, count, averageTurns?.toFixed(1) ?? '–', ...[averageMs, averagePauseMs, averageExecutionMs].map((value) => value == null ? '–' : seconds(value))]);
+    const caseGroups = Smart.caseStats(results);
+    const cases = [...caseGroups.values()].sort((a, b) => b.count - a.count || b.averageMs - a.averageMs);
     const historyMetrics = {
       scope: 'filtered session history', recordedSolves: recorded.length, averageTurnsPerSecond: tps,
       averageQuarterTurns: average(results.map((result) => result.turns)),
@@ -1869,31 +1873,39 @@
       cases: cases.slice(0, 16).map(({ name, type, count, averageMs, averagePauseMs, averageExecutionMs, best }) =>
         ({ name, type, count, averageMs, averagePauseMs, averageExecutionMs, bestMs: best })),
     };
-    $('#smart-history-phases').replaceChildren(
+    const container = $('#smart-history-phases');
+    const expanded = new Set([...container.querySelectorAll('details[data-case-type][open]')].map((details) => details.dataset.caseType));
+    container.replaceChildren(
       h('p', { class: 'muted small' }, 'Inferred CFOP splits for completed smart-cube solves in this range.'),
-      phaseTable(rows, ['Phase', 'Solves', 'Avg time', 'Avg initial pause', 'Avg execution']),
-      cases.length ? renderCaseHistory(cases) : null,
+      phaseTable(rows, ['Phase', 'Solves', 'Avg turns', 'Avg time', 'Avg initial pause', 'Avg execution']),
+      renderCaseHistory(caseGroups, expanded),
       session().drill ? null : trainingFocus(recorded, cases),
       h('div', { class: 'row ai-history-actions' }, button('AI practice review', () =>
         openModal('AI practice review', (body) => body.append(renderCoach(historyMetrics)))))
     );
   }
 
-  function renderCaseHistory(cases) {
+  function renderCaseHistory(cases, expanded) {
     return h('section', { class: 'case-details', 'aria-label': 'OLL and PLL case statistics' },
       h('h3', null, 'OLL and PLL case statistics'),
       ['OLL', 'PLL'].map((type) => {
-        const rows = cases.filter((item) => item.type === type).map((item) => [
-          item.name, String(item.count), seconds(item.averageMs), seconds(item.best),
-          seconds(item.averagePauseMs), seconds(item.averageExecutionMs),
-        ]);
-        return rows.length ? h('div', null, h('h4', null, type),
-          phaseTable(rows, ['Case', 'Solves', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])) : null;
+        const catalog = Smart.caseCatalog(type);
+        let seen = 0;
+        const rows = catalog.map(({ key, name, skip }) => {
+          const group = cases.get(`${type}:${key}`);
+          if (!group) return [name, 0, '–', '–', '–', '–', '–'];
+          if (!skip) seen++;
+          return [name, group.count, group.averageTurns.toFixed(1), seconds(group.averageMs), seconds(group.best),
+            seconds(group.averagePauseMs), seconds(group.averageExecutionMs)];
+        });
+        return h('details', { class: 'case-catalog', 'data-case-type': type, open: expanded.has(type) },
+          h('summary', null, `${type} cases · ${seen}/${catalog.length - 1} seen`),
+          h('div', { class: 'table-scroll' }, phaseTable(rows, ['Case', 'Solves', 'Avg turns', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])));
       }));
   }
 
   function trainingFocus(solves, cases) {
-    const ranked = cases.filter(({ name, example }) => name !== 'AUF only' && example)
+    const ranked = cases.filter(({ example }) => example)
       .map((record) => {
         const { index, start, end } = record.example;
         const algorithm = solves[index].smart.moves.slice(start, end).map(([move]) => move).join(' ');

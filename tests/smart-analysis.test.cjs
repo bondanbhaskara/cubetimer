@@ -65,7 +65,7 @@ test('presets produce replayable cases with expected CFOP phases', () => {
     const solve = Smart.analyze(scramble, trace);
     assert.equal(solve.states.at(-1), SmartCube.SOLVED);
     assert.equal(solve.crossColor, 'Yellow');
-    assert.equal(solve.phases[name === 'Sune' ? 2 : 3].case.name, name);
+    assert.equal(solve.phases[name === 'Sune' ? 2 : 3].case.name, name === 'Sune' ? 'OLL 27 (Sune)' : name);
     assert.equal(solve.phases.reduce((sum, phase) => sum + phase.duration, 0), duration);
     assert.equal(solve.turns, algorithm.split(' ').reduce((sum, move) => sum + (move.endsWith('2') ? 2 : 1), 0));
   }
@@ -76,7 +76,7 @@ test('case recognition works across cross colors and ignores PLL alignment', () 
   const suneMoves = rotatedSune.split(' ').map((move, i) => [move, i * 200]);
   const rotated = Smart.analyze(Smart.drillSetup(rotatedSune), { moves: suneMoves });
   assert.equal(rotated.crossColor, 'Orange');
-  assert.equal(rotated.phases[2].case.name, 'Sune');
+  assert.equal(rotated.phases[2].case.name, 'OLL 27 (Sune)');
 
   const algorithm = `U' ${Smart.DRILLS['T-perm']}`;
   const moves = algorithm.split(' ').map((move, i) => [move, i * 200]);
@@ -101,6 +101,41 @@ test('PLL starts after both last-layer orientation and first-two-layer repair', 
   assert.equal(phases[3].start, repair.length);
   assert.equal(phases[3].case.name, 'T-perm');
   assert.deepEqual(trace.moves.slice(phases[3].start).map(([move]) => move), tPerm);
+});
+
+test('splits each F2L pair even when insertions temporarily break the aligned cross', () => {
+  const algorithm = `D2 R U R' B U B' L U L' F U F' ${Smart.DRILLS.Sune} ${Smart.DRILLS['T-perm']} U2`;
+  const moves = algorithm.split(' ').map((move, i) => [move, i * 125]);
+  const { phases, pairs } = Smart.analyze(Smart.drillSetup(algorithm), { moves });
+  assert.equal(phases[0].turns, 2);
+  assert.equal(phases[1].turns, 12);
+  assert.equal(phases[1].duration, 1500);
+  assert.deepEqual(pairs.map(({ start, end, duration, turns }) => [start, end, duration, turns]), [
+    [1, 4, 375, 3], [4, 7, 375, 3], [7, 10, 375, 3], [10, 13, 375, 3],
+  ]);
+  assert.equal(phases[2].case.name, 'OLL 27 (Sune)');
+  assert.equal(phases[3].case.name, 'T-perm');
+});
+
+test('includes the full case catalogs, recognizes uncommon cases and records skips', () => {
+  for (const [type, total] of [['OLL', 57], ['PLL', 21]]) {
+    const catalog = Smart.caseCatalog(type);
+    assert.equal(catalog.length, total + 1);
+    assert.equal(new Set(catalog.map(({ key }) => key)).size, total + 1);
+    assert.equal(catalog.filter(({ skip }) => skip).length, 1);
+  }
+  const movesFor = (algorithm) => algorithm.split(' ').map((move, i) => [move, i * 125]);
+  const oll = "R' F R U R U' R2 F' R2 U' R' U R U R'";
+  assert.equal(Smart.analyze(Smart.drillSetup(oll), { moves: movesFor(oll) }).phases[2].case.name, 'OLL 55');
+  const gPerm = "D' R U R' U' D R2 U' R U' R' U R' U R2 U";
+  assert.equal(Smart.analyze(Smart.drillSetup(gPerm), { moves: movesFor(gPerm) }).phases[3].case.name, 'Gd-perm');
+  const alignment = Smart.analyze('U2', { moves: movesFor('U2') });
+  assert.equal(alignment.phases[2].case.name, 'OLL skip');
+  assert.equal(alignment.phases[3].case.name, 'AUF only');
+  assert.deepEqual(alignment.pairs.map(({ turns, duration }) => [turns, duration]), [[0, 0], [0, 0], [0, 0], [0, 0]]);
+  const pllSkip = Smart.caseStats([alignment]).get('PLL:000000000000');
+  assert.equal(pllSkip.averageTurns, 2);
+  assert.equal(pllSkip.example, undefined);
 });
 
 test('rejects trace data that cannot reproduce the solved state or time', () => {
@@ -140,7 +175,7 @@ test('GAN battery packets, serial rollover, recovered turns and gaps follow the 
 
 test('case summaries keep distinct patterns separate and aggregate timing', () => {
   const result = (key, duration, pause, label = 'PLL') => ({
-    phases: [{ label, case: { key, name: key }, duration, pause, start: 3, end: 8 }],
+    phases: [{ label, case: { key, name: key }, duration, pause, turns: 6, start: 3, end: 8 }],
   });
   const cases = Smart.caseStats([
     result('A', 1000, 200), result('A', 1400, 400),
@@ -150,6 +185,7 @@ test('case summaries keep distinct patterns separate and aggregate timing', () =
   const group = cases.get('PLL:A');
   assert.equal(group.count, 2);
   assert.equal(group.averageMs, 1200);
+  assert.equal(group.averageTurns, 6);
   assert.equal(group.averagePauseMs, 300);
   assert.equal(group.averageExecutionMs, 900);
   assert.equal(group.best, 1000);
