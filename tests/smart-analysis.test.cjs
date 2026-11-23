@@ -138,6 +138,30 @@ test('includes the full case catalogs, recognizes uncommon cases and records ski
   assert.equal(pllSkip.example, undefined);
 });
 
+test('all 78 recommendations produce the pictured drill setup and its named CFOP case', () => {
+  for (const type of ['OLL', 'PLL']) {
+    for (const entry of Smart.caseCatalog(type)) {
+      if (entry.skip) {
+        assert.equal(entry.algorithm, null, entry.name);
+        assert.equal(entry.facelets, SmartCube.SOLVED, entry.name);
+        continue;
+      }
+      const setup = Smart.drillSetup(entry.algorithm);
+      assert.ok(setup, entry.name);
+      const moves = entry.algorithm.split(' ').map((move, i) => [move, i * 100]);
+      const trace = Smart.cleanTrace({ clock: 'cube', moves }, setup, moves.at(-1)[1]);
+      assert.ok(trace, entry.name);
+      const { states, phases } = Smart.analyze(setup, trace);
+      const detected = phases.find(({ label }) => label === type);
+      assert.equal(states[0], entry.facelets, entry.name);
+      assert.equal(states.at(-1), SmartCube.SOLVED, entry.name);
+      assert.equal(detected.start, 0, entry.name);
+      assert.equal(detected.case?.key, entry.key, entry.name);
+      if (type === 'PLL') assert.equal(phases[2].case?.skip, true, entry.name);
+    }
+  }
+});
+
 test('rejects trace data that cannot reproduce the solved state or time', () => {
   assert.equal(Smart.cleanTrace({ clock: 'browser', moves: [['U', 0]] }, 'R', 0), null);
   assert.equal(Smart.cleanTrace({ clock: 'browser', moves: [["R'", 3]] }, 'R', 3), null);

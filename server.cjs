@@ -7,6 +7,7 @@ const { configureCoach, prepareReview, completeReview, ProviderError } = require
 
 const MAX_METRICS_BYTES = 16 * 1024;
 const MAX_BULK_METRICS_BYTES = 32 * 1024;
+const MAX_CHAT_BYTES = 100 * 1024;
 const MAX_SETTINGS_BYTES = 16 * 1024;
 const ASSET_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -52,15 +53,18 @@ async function coachRequest(request, response, config) {
     return json(response, 403, { error: 'Open Cube Timer on the same address as the coach server.' });
   }
   if (!config) return json(response, 503, { error: 'Open Settings → AI coach to configure a provider.' });
-  const body = await readJsonBody(request, response, MAX_BULK_METRICS_BYTES, 'Coaching metrics');
+  const body = await readJsonBody(request, response, MAX_BULK_METRICS_BYTES + MAX_CHAT_BYTES, 'Coaching request');
   if (!body) return;
-  const bulkReview = body.value?.scope === 'selected solves';
-  if (!bulkReview && body.size > MAX_METRICS_BYTES) {
+  const chat = body.value != null && Object.hasOwn(body.value, 'conversation');
+  const metrics = chat ? body.value.metrics ?? null : body.value;
+  const bulkReview = metrics?.scope === 'selected solves';
+  const metricsSize = chat ? Buffer.byteLength(JSON.stringify(metrics)) : body.size;
+  if (metricsSize > (bulkReview ? MAX_BULK_METRICS_BYTES : MAX_METRICS_BYTES)) {
     return json(response, 413, { error: 'The coaching request is too large.' });
   }
-  const review = prepareReview(body.value);
+  const review = prepareReview(metrics, chat ? body.value.conversation : []);
   if (!review) {
-    return json(response, 400, { error: bulkReview
+    return json(response, 400, { error: chat ? 'Send a valid follow-up about the selected solves.' : bulkReview
       ? 'Select 1 to 50 solves with valid times and choose which data to share.'
       : 'Choose a recorded solve or a session range for advice.' });
   }

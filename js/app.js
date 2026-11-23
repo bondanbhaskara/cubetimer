@@ -196,7 +196,7 @@
 
   /* ================= Scrambles ================= */
 
-  const scr = { list: [], idx: -1 };
+  const scr = { list: [], idx: -1, moveLabels: [] };
 
   function resetScrambles() {
     scr.list = [];
@@ -219,6 +219,7 @@
     const el = $('#scramble');
     const text = currentScramble();
     el.textContent = text;
+    scr.moveLabels = [];
     el.classList.toggle('long', text.length > 110 && text.length <= 260);
     el.classList.toggle('xlong', text.length > 260);
     $('#prev-scramble').disabled = scr.idx <= 0;
@@ -265,11 +266,6 @@
       svg.appendChild(r);
     }
     container.replaceChildren(svg);
-  }
-
-  function renderFacelets(container, facelets, label) {
-    const model = window.Scramble.cubeFromFacelets(facelets);
-    renderCubeNet(container, 3, window.Scramble.modelNet(model), label);
   }
 
   /* ================= Solves ================= */
@@ -543,7 +539,7 @@
 
   /* ================= Smart cube ================= */
 
-  const smart = { cube: null, attempt: null, closing: false, guide: null, undo: [], recording: null, inspected: null };
+  const smart = { cube: null, attempt: null, closing: false, guide: null, progress: 0, undo: [], recording: null, inspected: null };
   let liveCubeView;
   const smartEligible = () => settings().input === 'timer' && ['333', '333oh'].includes(session().puzzle);
   const smartTiming = () => smart.cube && smartEligible();
@@ -585,8 +581,45 @@
 
   function updateSmartTarget() {
     smart.guide = smartTiming() ? Smart.scrambleGuide(currentScramble()) : null;
+    smart.progress = 0;
     smart.undo = [];
     updateSmartReadiness();
+  }
+
+  function renderScrambleGuide(facelets) {
+    const scramble = $('#scramble');
+    const guide = $('#scramble-guide');
+    const step = smart.guide?.prefixes.get(facelets);
+    const matched = !!step && !step.next;
+    guide.hidden = !facelets || !smart.guide || (T.state !== 'idle' && !(inspecting() && matched));
+    scramble.classList.toggle('guided', !guide.hidden);
+    if (guide.hidden) return;
+
+    if (!scr.moveLabels.length) {
+      scramble.replaceChildren(...currentScramble().split(/(\s+)/).map((part) => {
+        if (!part.trim()) return part;
+        const label = h('span', { class: 'scramble-move' }, part);
+        scr.moveLabels.push(label);
+        return label;
+      }));
+    }
+    const nextLabel = step?.next ? scr.moveLabels[step.index] : null;
+    const halfTurn = nextLabel && nextLabel.textContent !== step.next;
+    if (step) smart.progress = step.index + (halfTurn ? 0.5 : 0);
+    const done = Math.floor(smart.progress);
+    const undo = smart.undo.at(-1);
+    const status = matched ? 'Scramble matched' : step?.next ? `Next ${step.next}` : undo ? `Undo ${undo}` : 'Off scramble';
+    const count = `${done} / ${smart.guide.count}`;
+    const statusLabel = $('#scramble-guide-status');
+    const countLabel = $('#scramble-guide-count');
+    if (statusLabel.textContent !== status) statusLabel.textContent = status;
+    if (countLabel.textContent !== count) countLabel.textContent = count;
+    guide.dataset.state = matched ? 'matched' : step ? 'following' : 'off';
+    guide.style.setProperty('--scramble-progress', smart.progress / smart.guide.count);
+    scr.moveLabels.forEach((label, i) => {
+      const state = i < done ? 'done' : label === nextLabel ? (halfTurn ? 'half' : 'next') : '';
+      if (label.dataset.step !== state) label.dataset.step = state;
+    });
   }
 
   function renderLiveCube() {
@@ -598,14 +631,7 @@
       liveCubeView = new window.CubeView($('#live-cube-view'), STICKER, $('#live-cube-reset'));
     }
     if (liveCubeView && liveCubeView.facelets !== facelets) liveCubeView.setState(facelets);
-    const guide = $('#scramble-guide');
-    guide.hidden = live.hidden || !smart.guide || T.state !== 'idle';
-    if (guide.hidden) return;
-    const step = smart.guide.prefixes.get(cube.facelets);
-    const undo = smart.undo.at(-1);
-    guide.textContent = step
-      ? step.next ? `${step.index} / ${smart.guide.count} · Next ${step.next}` : 'Scramble matched'
-      : undo ? `Undo ${undo}` : 'Off scramble';
+    renderScrambleGuide(facelets);
   }
 
   function updateSmartReadiness() {
@@ -616,7 +642,6 @@
     if (targetMatched && smart.inspected !== smart.guide.target && settings().inspection && timerActive()) {
       smart.inspected = smart.guide.target;
       beginInspection();
-      $('#scramble-guide').hidden = true;
     } else {
       hint();
     }
@@ -1184,6 +1209,28 @@
     if (smartTiming()) updateSmartReadiness();
   });
 
+  function bluetoothAddressHelp() {
+    const { userAgent, userAgentData, vendor } = navigator;
+    const chrome = userAgentData?.brands?.some(({ brand }) => brand === 'Google Chrome') ??
+      (vendor === 'Google Inc.' && /\bChrome\//.test(userAgent) &&
+        !/\b(?:Edg|EdgA|OPR|SamsungBrowser|Vivaldi)\//.test(userAgent) && !navigator.brave);
+    if (!chrome) return h('p', { class: 'small' }, h('a', {
+      href: 'https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71',
+      target: '_blank', rel: 'noopener noreferrer',
+    }, 'Find your GAN cube’s Bluetooth address'));
+
+    const devices = 'chrome://bluetooth-internals/#devices';
+    const mac = /^mac/i.test(userAgentData?.platform || navigator.platform);
+    return [
+      h('p', { class: 'small' }, 'In a new Chrome tab, paste ', h('code', null, devices), ' into the address bar. ',
+        button('Copy link', () => copyText(devices), 'link-btn')),
+      h('p', { class: 'muted small' }, 'Select Start Scan. ', mac
+        ? ['On macOS, use Inspect on your cube to connect, then run ', h('code', null, 'system_profiler SPBluetoothDataType'),
+          ' in Terminal to find its hardware address.']
+        : 'Find your cube and copy its address from the Address column.'),
+    ];
+  }
+
   function openSmartCube() {
     openModal('Connect a smart cube', (body) => {
       if (!window.isSecureContext || !navigator.bluetooth?.requestDevice) {
@@ -1208,10 +1255,7 @@
         });
         const form = h('form', null,
           h('label', { class: 'field', for: address.id }, 'Bluetooth address', address),
-          h('p', { class: 'small' }, h('a', {
-            href: 'https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71',
-            target: '_blank', rel: 'noopener noreferrer',
-          }, 'Find your GAN cube’s Bluetooth address')),
+          bluetoothAddressHelp(),
           h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'btn primary' }, 'Continue pairing')));
         body.insertBefore(form, actions);
         address.focus();
@@ -1335,26 +1379,83 @@
     });
   }
 
+  function renderCaseDiagram(type, { facelets, name }) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 58 58');
+    svg.setAttribute('class', 'case-diagram');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `Top view of ${name}`);
+    function sticker(index, x, y, width, height) {
+      const color = facelets[index];
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', width);
+      rect.setAttribute('height', height);
+      rect.setAttribute('rx', 1.2);
+      rect.setAttribute('fill', type === 'OLL' && color !== 'U' ? '#555d68' : STICKER[color]);
+      svg.append(rect);
+    }
+    for (let i = 0; i < 3; i++) {
+      const offset = 11 + i * 12;
+      for (let j = 0; j < 3; j++) sticker(i * 3 + j, 11 + j * 12, offset, 11, 11);
+      sticker(47 - i, offset, 5, 11, 4); // Back
+      sticker(11 - i, 48, offset, 4, 11); // Right
+      sticker(18 + i, offset, 48, 11, 4); // Front
+      sticker(36 + i, 5, offset, 4, 11); // Left
+    }
+    return svg;
+  }
+
+  function caseReference(type, entry) {
+    return h('div', { class: 'case-reference' }, renderCaseDiagram(type, entry),
+      h('div', null, h('span', null, entry.name),
+        entry.algorithm
+          ? [h('code', null, entry.algorithm),
+            button('Drill', () => startDrill(entry.name, entry.algorithm), 'link-btn case-drill', { 'aria-label': `Drill ${entry.name}` })]
+          : h('span', { class: 'muted small case-skip' }, type === 'PLL' ? 'Align U as needed' : 'Already oriented')));
+  }
+
   function openDrills() {
     openModal('Algorithm drills', (body) => {
+      const choices = new Map();
       const preset = h('select', { id: 'drill-preset' },
-        ...Object.keys(Smart.DRILLS).map((name) => h('option', { value: name }, name)),
+        ['OLL', 'PLL'].map((type) => h('optgroup', { label: type },
+          Smart.caseCatalog(type).filter(({ skip }) => !skip).map((entry) => {
+            const value = `${type}:${entry.key}`;
+            choices.set(value, { type, entry });
+            return h('option', { value, selected: entry.algorithm === Smart.DRILLS.Sune }, entry.name);
+          }))),
         h('option', { value: 'custom' }, 'Custom algorithm')
       );
-      const notation = h('input', { id: 'drill-notation', type: 'text', maxlength: 400, spellcheck: 'false' });
+      const notation = h('textarea', { id: 'drill-notation', rows: 2, maxlength: 400, spellcheck: 'false' });
       const error = h('p', { class: 'muted small', role: 'status' });
-      notation.value = Smart.DRILLS[preset.value];
+      const preview = h('div', { class: 'drill-case-preview' });
+      function selectCase() {
+        const choice = choices.get(preset.value);
+        notation.value = choice?.entry.algorithm || '';
+        preview.hidden = !choice;
+        if (choice) preview.replaceChildren(renderCaseDiagram(choice.type, choice.entry),
+          h('p', { class: 'muted small' }, 'Hold white on top and green in front. The bottom edge of the diagram faces you.'));
+      }
+      selectCase();
       preset.addEventListener('change', () => {
-        notation.value = Smart.DRILLS[preset.value] || '';
+        selectCase();
         error.textContent = '';
         if (preset.value === 'custom') notation.focus();
       });
-      notation.addEventListener('input', () => { preset.value = 'custom'; });
+      notation.addEventListener('input', () => {
+        preset.value = 'custom';
+        preview.hidden = true;
+        error.textContent = '';
+      });
       body.append(
         h('p', { class: 'muted small' }, 'Follow the setup, solve the case, then repeat. Reps are saved in a separate session.'),
-        h('div', { class: 'settings-grid' },
+        h('div', { class: 'settings-grid drill-fields' },
           h('label', { for: 'drill-preset' }, 'Case'), preset,
           h('label', { for: 'drill-notation' }, 'Algorithm'), notation),
+        preview,
         error,
         h('div', { class: 'row end' }, button('Start drill', () => {
           const algorithm = notation.value.trim().replace(/\s+/g, ' ');
@@ -1362,23 +1463,27 @@
             error.textContent = 'Enter up to 100 U, R, F, D, L or B turns that change the cube state. Prime and double turns are supported.';
             return;
           }
-          startDrill(preset.value === 'custom' ? 'Custom algorithm' : preset.value, algorithm);
-          modal.close();
+          startDrill(choices.get(preset.value)?.entry.name || 'Custom algorithm', algorithm);
         }, 'btn primary'))
       );
     });
   }
 
   function startDrill(name, algorithm) {
-    const puzzle = session().puzzle;
+    const currentPuzzle = session().puzzle;
+    const puzzle = ['333', '333oh'].includes(currentPuzzle) ? currentPuzzle : '333';
     let training = db.sessions.find((s) => s.puzzle === puzzle && s.drill?.algorithm === algorithm);
     if (!training) {
       training = newSession(uniqueName(`${name} drill`), puzzle);
       training.drill = { name, algorithm };
       db.sessions.push(training);
     }
+    const changeInput = settings().input !== 'timer';
+    settings().input = 'timer';
     switchSession(training.id);
+    if (changeInput) applyInputMode();
     if (currentView !== 'timer') setView('timer');
+    if (modal.open) modal.close();
   }
 
   function exitDrill() {
@@ -1433,15 +1538,15 @@
     };
   }
 
-  function renderCaseDetails(cases, showHistory) {
+  function renderCaseDetails(cases, phases, showHistory) {
     const completed = cases.filter((item) => !item.skipped);
-    const rows = cases.map((item) => item.skipped
+    const rows = cases.map((item, index) => item.skipped
       ? [`${item.phase} · Skipped`, '–', '–', '–']
-      : [`${item.phase} · ${item.case.startsWith(item.phase) ? item.case.slice(item.phase.length + 1) : item.case}`,
+      : [caseReference(item.phase, phases[index].case),
         seconds(item.timeMs), seconds(item.initialPauseMs), seconds(item.executionMs)]);
     return h('section', { class: 'case-details', 'aria-label': 'OLL and PLL cases' },
       h('h4', null, 'OLL and PLL cases'),
-      phaseTable(rows, ['This solve', 'Time', 'Initial pause', 'Execution']),
+      h('div', { class: 'table-scroll' }, phaseTable(rows, ['This solve', 'Time', 'Initial pause', 'Execution'])),
       showHistory && completed.length ? h('div', null,
         h('p', { class: 'muted small' }, 'Earlier completed solves of the same case in this session.'),
         phaseTable(completed.map((item) => [
@@ -1455,10 +1560,15 @@
     const trace = solve.smart;
     const info = Smart.analyze(solve.s, trace);
     const prior = earlierSolves && Smart.caseStats(earlierSolves.filter((item) => item.smart && item.p !== S.PEN_DNF).map(analyzeSolve));
-    const cases = info.phases.filter(({ label }) => label === 'OLL' || label === 'PLL').map((phase) => caseComparison(phase, prior));
+    const casePhases = info.phases.filter(({ label }) => label === 'OLL' || label === 'PLL');
+    const cases = casePhases.map((phase) => caseComparison(phase, prior));
     const last = trace.moves.length;
-    const net = h('div', { class: 'smart-replay-net' });
-    const position = h('p', { class: 'small' });
+    const orbit = h('div', { class: 'live-cube-view', tabindex: 0, role: 'group', 'aria-label': 'Replay cube',
+      'aria-describedby': 'replay-orbit-help replay-position' });
+    const reset = h('button', { type: 'button', class: 'link-btn live-cube-reset',
+      'aria-label': 'Reset replay cube view', title: 'Reset cube view' }, '↺');
+    const cube = new window.CubeView(orbit, STICKER, reset);
+    const position = h('p', { class: 'replay-position', id: 'replay-position' });
     const slider = h('input', { type: 'range', min: 0, max: last, value: 0, 'aria-label': 'Replay turn' });
     const speed = h('select', { 'aria-label': 'Replay speed' },
       h('option', { value: '0.5' }, '0.5×'),
@@ -1467,13 +1577,20 @@
     let index = 0;
     let frame = 0;
     const play = button('Play', togglePlayback);
-    function show(at) {
+    function show(at, direction = 0, maxDuration = Infinity) {
       index = at;
       slider.value = at;
       const move = at ? trace.moves[at - 1][0] : 'Setup';
       position.textContent = `${at} / ${last} · ${move} · ${seconds(info.times[at])}`;
       slider.setAttribute('aria-valuetext', position.textContent);
-      renderFacelets(net, info.states[at], `Cube after ${at} recorded turns`);
+      if (direction) {
+        const previous = info.states[at - direction];
+        if (cube.facelets !== previous || cube.animation) cube.setState(previous);
+        const turn = direction > 0 ? move : Smart.inverse(trace.moves[at][0]);
+        cube.turn(turn, info.states[at], maxDuration);
+      } else {
+        cube.setState(info.states[at]);
+      }
     }
     function pause() {
       cancelAnimationFrame(frame);
@@ -1484,6 +1601,11 @@
       pause();
       show(Math.max(0, Math.min(last, at)));
     }
+    function step(direction) {
+      pause();
+      const at = index + direction;
+      if (at >= 0 && at <= last) show(at, direction);
+    }
     function togglePlayback() {
       if (frame) return pause();
       if (index === last) show(0);
@@ -1492,11 +1614,14 @@
       const rate = Number(speed.value);
       play.textContent = 'Pause';
       const tick = (now) => {
-        if (!modal.open || !net.isConnected) return pause();
+        if (!modal.open || !orbit.isConnected) return pause();
         const elapsed = offset + (now - origin) * rate;
         let next = index;
         while (next < last && info.times[next + 1] <= elapsed) next++;
-        if (next !== index) show(next);
+        if (next !== index) {
+          const untilNext = next < last ? (info.times[next + 1] - elapsed) / rate : Infinity;
+          show(next, 1, untilNext);
+        }
         if (next === last) return pause();
         frame = requestAnimationFrame(tick);
       };
@@ -1516,6 +1641,15 @@
     const clock = trace.clock === 'cube' ? 'Cube clock' : 'Browser clock';
     return h('section', { class: 'solve-analysis', 'aria-label': 'Smart cube analysis' },
       h('h3', null, 'Smart cube analysis'),
+      h('h4', null, 'Solve replay'),
+      h('div', { class: 'replay-player' },
+        h('div', { class: 'replay-orbit' }, orbit,
+          h('div', { class: 'live-cube-caption muted small' }, h('span', null, 'Drag to rotate'), reset),
+          h('span', { class: 'sr-only', id: 'replay-orbit-help' }, 'Use the arrow keys to rotate. Press Home to reset the view.')),
+        h('div', { class: 'replay-timeline' }, position, slider,
+          h('div', { class: 'row replay-controls' },
+            button('←', () => step(-1), 'btn', { 'aria-label': 'Previous turn', title: 'Previous turn' }), play,
+            button('→', () => step(1), 'btn', { 'aria-label': 'Next turn', title: 'Next turn' }), speed))),
       h('div', { class: 'smart-metrics' },
         kpi('Quarter turns', String(info.turns)),
         kpi('Turns per second', info.tps == null ? '–' : info.tps.toFixed(2)),
@@ -1525,12 +1659,7 @@
       h('h4', null, 'Inferred CFOP splits'),
       h('p', { class: 'muted small' }, `${info.crossColor} cross${info.xcross ? ' · X-cross detected' : ''}. Initial pause measures the gap to the phase’s first turn.`),
       phaseTable(rows, ['Phase', 'Time', 'Turns', 'Initial pause', 'Execution']),
-      renderCaseDetails(cases, !!prior),
-      h('h4', null, 'Solve replay'),
-      net, position, slider,
-      h('div', { class: 'row replay-controls' },
-        button('Previous turn', () => seek(index - 1)), play,
-        button('Next turn', () => seek(index + 1)), speed),
+      renderCaseDetails(cases, casePhases, !!prior),
       earlierSolves ? renderCoach({
         scope: 'single solve', timeMs: solve.t, penalty: ['OK', '+2', 'DNF'][solve.p],
         inspectionMs: trace.inspection, timingSource: trace.clock, estimatedTimestamps: trace.estimated,
@@ -1656,33 +1785,63 @@
   }
 
   function renderCoach(metrics, sharing = 'Sends timing and case metrics to the configured AI provider.') {
-    const status = h('p', { class: 'muted small', role: 'status' });
-    const output = h('div', { class: 'coach-output', hidden: true });
+    const status = h('span', { class: 'coach-status muted small', role: 'status' });
+    const thread = h('div', { class: 'coach-thread', role: 'log', 'aria-label': 'AI coach conversation', tabindex: 0, hidden: true });
     const source = h('p', { class: 'small', hidden: true });
-    const ask = button('Get AI advice', async () => {
+    let conversation = [];
+    const ask = button('Get AI advice', () => requestAdvice(), 'btn primary');
+    const reply = h('textarea', { rows: 2, maxlength: AI.chatLimits.user,
+      placeholder: 'Ask a follow-up…', 'aria-label': 'Reply to AI coach' });
+    const send = button('Send', () => requestAdvice(reply.value.trim()), 'btn primary', { disabled: true });
+    const composer = h('div', { class: 'coach-composer', hidden: true }, reply, send);
+    const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
+    reply.addEventListener('input', () => { send.disabled = !reply.value.trim(); });
+    reply.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      send.click();
+    });
+
+    function appendMessage(role, content) {
+      const message = h('div', { class: 'coach-message', 'data-role': role },
+        h('strong', { class: 'small' }, role === 'user' ? 'You' : 'AI coach'),
+        h('p', { class: 'coach-output' }, content));
+      thread.hidden = false;
+      thread.append(message);
+      thread.scrollTop = thread.scrollHeight;
+      return message;
+    }
+
+    async function requestAdvice(question = '') {
       if (coachRequest) return;
       const request = coachRequest = new AbortController();
       const timeout = setTimeout(() => request.abort('timeout'), 45000);
+      const messages = question
+        ? [...conversation, { role: 'user', content: question }].slice(-AI.chatLimits.messages) : [];
+      const pending = question ? appendMessage('user', question) : null;
+      let answered = false;
       ask.disabled = true;
+      send.disabled = true;
+      reply.disabled = true;
       cancel.hidden = false;
-      output.hidden = true;
-      output.textContent = '';
-      source.hidden = true;
-      source.replaceChildren();
-      status.textContent = 'Waiting for AI advice…';
+      status.textContent = question ? 'Waiting for a reply…' : 'Waiting for AI advice…';
       try {
-        const { advice, lesson } = await AI.review(metrics, request.signal);
-        if (request.signal.aborted || !output.isConnected) return;
-        output.textContent = advice;
-        output.hidden = false;
-        if (lesson) {
+        const { advice, lesson } = await AI.review(metrics, request.signal, messages);
+        if (request.signal.aborted || !thread.isConnected) return;
+        conversation = [...messages, { role: 'assistant', content: advice.slice(0, AI.chatLimits.assistant) }];
+        appendMessage('assistant', advice);
+        if (!question && lesson) {
           const access = lesson.access === 'premium' ? ' (Premium video)'
             : lesson.access === 'free account' ? ' (free account required)' : '';
           source.append(h('a', { href: lesson.url, target: '_blank', rel: 'noopener noreferrer' },
             `CubeSkills · ${lesson.title}`), access);
           source.hidden = false;
         }
-        status.textContent = 'AI advice ready.';
+        answered = true;
+        ask.hidden = true;
+        composer.hidden = false;
+        reply.value = '';
+        status.textContent = '';
       } catch (error) {
         if (status.isConnected) {
           status.textContent = request.signal.aborted
@@ -1692,15 +1851,19 @@
       } finally {
         clearTimeout(timeout);
         if (coachRequest === request) coachRequest = null;
+        if (!answered) pending?.remove();
         ask.disabled = false;
+        reply.disabled = false;
+        send.disabled = !reply.value.trim();
         cancel.hidden = true;
+        if (question && !request.signal.aborted && thread.isConnected && modal.open) reply.focus();
       }
-    }, 'btn primary');
-    const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
+    }
+
     return h('section', { class: 'ai-coach', 'aria-label': 'AI coach' },
       h('h4', null, 'AI coach'),
-      h('p', { class: 'muted small' }, `${sharing} Provider charges may apply.`),
-      h('div', { class: 'row' }, ask, cancel), status, output, source);
+      h('p', { class: 'muted small' }, `${sharing} Follow-ups also send recent messages. Provider charges may apply.`),
+      ask, thread, source, composer, h('div', { class: 'coach-feedback' }, status, cancel));
   }
 
   const BULK_REVIEW_LIMIT = 50;
@@ -2249,19 +2412,22 @@
   function renderCaseHistory(cases, expanded) {
     return h('section', { class: 'case-details', 'aria-label': 'OLL and PLL case statistics' },
       h('h3', null, 'OLL and PLL case statistics'),
+      h('p', { class: 'muted small' }, 'Diagrams show the recommended setup with white on top and green in front.'),
       ['OLL', 'PLL'].map((type) => {
         const catalog = Smart.caseCatalog(type);
         let seen = 0;
-        const rows = catalog.map(({ key, name, skip }) => {
-          const group = cases.get(`${type}:${key}`);
-          if (!group) return [name, 0, '–', '–', '–', '–', '–'];
-          if (!skip) seen++;
-          return [name, group.count, group.averageTurns.toFixed(1), seconds(group.averageMs), seconds(group.best),
+        const rows = catalog.map((entry) => {
+          const reference = caseReference(type, entry);
+          const group = cases.get(`${type}:${entry.key}`);
+          if (!group) return [reference, 0, '–', '–', '–', '–', '–'];
+          if (!entry.skip) seen++;
+          return [reference, group.count, group.averageTurns.toFixed(1), seconds(group.averageMs), seconds(group.best),
             seconds(group.averagePauseMs), seconds(group.averageExecutionMs)];
         });
         return h('details', { class: 'case-catalog', 'data-case-type': type, open: expanded.has(type) },
           h('summary', null, `${type} cases · ${seen}/${catalog.length - 1} seen`),
-          h('div', { class: 'table-scroll' }, phaseTable(rows, ['Case', 'Solves', 'Avg turns', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])));
+          h('div', { class: 'table-scroll case-table-scroll', tabindex: 0, 'aria-label': `${type} case table` },
+            phaseTable(rows, ['Case', 'Solves', 'Avg turns', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])));
       }));
   }
 

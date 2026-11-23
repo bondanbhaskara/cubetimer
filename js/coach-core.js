@@ -18,6 +18,7 @@
   ].join(' ');
 
   const MAX_SOLVES = 50;
+  const CHAT_LIMITS = { messages: 8, user: 1500, assistant: 2500 };
   const PHASES = ['Cross', 'F2L', 'OLL', 'PLL'];
   const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -182,7 +183,16 @@
     return { ...provider, model: model.trim() };
   }
 
-  function prepareReview(metrics) {
+  function prepareReview(metrics, conversation = []) {
+    if (!Array.isArray(conversation) || conversation.length > CHAT_LIMITS.messages || conversation.length % 2) return null;
+    const replies = [];
+    for (const [index, message] of conversation.entries()) {
+      const role = index % 2 ? 'user' : 'assistant';
+      const content = typeof message?.content === 'string' ? message.content.trim() : '';
+      if (message?.role !== role || !content || content.length > CHAT_LIMITS[role]) return null;
+      replies.push({ role, content });
+    }
+
     let practiceMetrics = metrics;
     const isBulk = metrics?.scope === 'selected solves';
     if (isBulk) {
@@ -198,9 +208,11 @@
     const prompt = [COACH_PROMPT];
     if (isBulk) prompt.push(BULK_PROMPT);
     prompt.push(`CubeSkills lesson topic: ${lesson.title}`, observation, `Practice idea: ${practice}`);
+    if (replies.length) prompt.push('For a follow-up, answer the latest question directly and refer to the earlier conversation when useful.');
     return { lesson, messages: [
       { role: 'system', content: prompt.join('\n') },
       { role: 'user', content: JSON.stringify(metrics) },
+      ...replies,
     ] };
   }
 
@@ -236,7 +248,7 @@
     return { advice: advice.trim(), lesson };
   }
 
-  const core = { configureProvider, configureCoach, prepareReview, completeReview, ProviderError, selectPractice };
+  const core = { configureProvider, configureCoach, prepareReview, completeReview, ProviderError, selectPractice, CHAT_LIMITS };
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
   else global.CoachCore = core;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -53,7 +53,7 @@ In **Settings → Input method**, select **Type times in**. Enter a result and p
 1. Open Cube Timer at localhost or over HTTPS in Chrome or Edge with Web Bluetooth enabled. Turn on Bluetooth in the operating system.
 2. Close CubeStation and other apps using the cube. Rotate the white face to wake the iCarry 4. [GAN iCarry 4 manual and product page](https://www.gancube.com/products/gan-i-carry-4-smart-cube)
 3. Select a **3x3** or **3x3 One-Handed** session. In **Settings → Input method**, select **Timer (Space / touch)**.
-4. Select **Connect smart cube → Choose cube**, then select the GAN device and click **Pair** in the browser’s picker. If the browser cannot read the address, enter the cube’s six-byte Bluetooth address and select **Continue pairing**. Cube Timer remembers the address in this browser after it reads the cube successfully. [Find your GAN cube’s Bluetooth address](https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71)
+4. Select **Connect smart cube → Choose cube**, then select the GAN device and click **Pair** in the browser’s picker. If the browser cannot read the address, enter the cube’s six-byte Bluetooth address and select **Continue pairing**. In Chrome, use **Copy link** and paste `chrome://bluetooth-internals/#devices` into a new tab’s address bar. On macOS, use the Terminal instructions in the pairing dialog to find the hardware address. Other browsers show the [GAN Bluetooth address guide](https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71). Cube Timer remembers the address in this browser after it reads the cube successfully.
 5. Wait for the cube name and the **Live cube** 3D view to appear. Open **Cube info** to read the battery and hardware details the cube reports. Use **Refresh device info** to request them again.
 
 The live view animates layer turns as you scramble and solve. Drag or swipe to see other sides. With the view focused, use the arrow keys to rotate. Press **Home** or select **Reset cube view** to return to white on top and green in front.
@@ -62,14 +62,14 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 
 ### Record a smart-cube solve
 
-1. Begin with the physical cube solved. Hold it with **white on top** and **green in front** to follow the displayed notation. The guide shows progress and the next turn. For a double turn such as `R2`, either direction works.
+1. Begin with the physical cube solved. Hold it with **white on top** and **green in front** to follow the displayed notation. The guide highlights the next turn, marks completed moves, and fills the progress bar as you go. For a double turn such as `R2`, either direction works.
 2. If you turn away from a recognized scramble position, follow the **Undo** instruction. If you connect while scrambled and the app cannot identify the position in the scramble, solve the cube to start again.
 3. When the display says **Scramble matched**, turn the cube to start solving. If inspection is enabled, it starts when the scramble matches and the first solve turn ends inspection.
 4. The turn that solves the cube stops the timer and saves the result and move timeline. Press **Esc** to abort an attempt. Select **Disconnect cube** to return to manual timing.
 
 If the physical cube is solved and the live preview shows a different state, open **Cube info → Set cube as solved**. Keep the cube still while it confirms the reset. The scramble guide restarts at the beginning of the current scramble.
 
-The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The replay shows sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
+The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
 
 | What you see | What to try |
 | --- | --- |
@@ -84,18 +84,18 @@ From **Solves**, select a recorded smart-cube result. You can also select its do
 
 - **Smart cube analysis** shows quarter turns, average turns per second (TPS), longest gap between turns, and inspection time when recorded.
 - **Inferred CFOP splits** shows time, quarter turns, initial pause, and execution for Cross, F2L total and each of the four pairs, OLL, and PLL. The app splits at the first aligned cross and the first time each number of F2L slots is solved with that cross. Pairs already in place can share a checkpoint. Initial pause is the gap before the first turn of a phase. Execution is the rest of that phase’s elapsed time.
-- **OLL and PLL cases** shows the detected case, its time breakdown, and stats from earlier completed attempts in the session. The app recognizes all [57 OLL](https://www.cubeskills.com/uploads/pdf/tutorials/oll-algorithms.pdf) and [21 PLL](https://www.cubeskills.com/uploads/pdf/tutorials/pll-algorithms.pdf) cases, plus skips. **AUF only** means the last layer only needed alignment.
-- **Solve replay** lets you play at 0.5×, 1×, or 2×, scrub the timeline, step one turn at a time, or select a phase name to jump to its end.
+- **OLL and PLL cases** shows the detected case diagram, a recommended algorithm, and stats from this solve and earlier attempts. Select **Drill** to practice the pictured setup in the timer. **AUF only** means the last layer only needed alignment. [57 OLL cases](https://www.cubeskills.com/uploads/pdf/tutorials/oll-algorithms.pdf), [21 PLL cases](https://www.cubeskills.com/uploads/pdf/tutorials/pll-algorithms.pdf)
+- **Solve replay** animates the recorded turns on a 3D cube. Drag, swipe, or use the arrow keys on the cube to rotate the view. Play at 0.5×, 1×, or 2×, scrub the timeline, step one turn at a time, or select a phase name to jump to its end.
 - **Copy replay link** includes the scramble, move timeline, and result in the URL fragment. Open or share it using an address where the recipient can reach the app. A `localhost` link works on the machine serving it. The replay link omits comments and session names.
 
 ## Practice algorithms
 
 1. In a **3x3** or **3x3 One-Handed** session with **Timer** input, select **Algorithm drills**.
-2. Choose **Sune**, **T-perm**, **Ua-perm**, or **Custom algorithm**. Custom algorithms accept up to 100 outer-face turns using `U R F D L B`, with primes such as `R'` and doubles such as `U2`.
+2. Choose any of the **57 OLL** or **21 PLL** cases, or select **Custom algorithm**. Recommendations use outer-face turns so the smart cube can guide the setup. Custom algorithms accept up to 100 turns using `U R F D L B`, with primes such as `R'` and doubles such as `U2`.
 3. Select **Start drill**. Cube Timer reverses the algorithm to generate the setup. Scramble to that state, solve the case, then repeat from the same setup. Repetitions have a dedicated session. Use a connected smart cube to record moves for analysis, or time repetitions manually.
 4. Select **Exit drill** to go back to a regular session. Use the **Session** selector to revisit the saved drill.
 
-After recording smart-cube solves, open **History & stats → Smart cube performance → Training focus**. **Drill OLL** and **Drill PLL** repeat a sequence from a recorded case that took the longest on average in the selected range.
+After recording smart-cube solves, expand the **OLL cases** or **PLL cases** table under **History & stats → Smart cube performance**. Each case has a diagram and a **Drill** button for the recommended sequence. **Training focus** uses a sequence from your own recorded solves. [Algorithm data adapted from cfop-tracker](https://github.com/linluiben/cfop-tracker/blob/130d32b055be06bad2e1b498f929d0ac67f1d057/js/algs.js)
 
 ## Read History & stats
 
@@ -129,15 +129,15 @@ You can also supply defaults through the server environment. Settings saved from
 - `CUBETIMER_COACH_MODEL` is the exact model ID from the provider.
 - `CUBETIMER_COACH_API_TOKEN` is the provider token. A loopback provider that accepts unauthenticated requests can leave it unset.
 
-Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**.
+Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**. Ask a follow-up in the same dialog to continue the conversation.
 
 Use **History & stats → Bulk AI review** to select up to 50 solves in the current range. Check individual solves or select the latest 50 available. Choose **Solve times only** to share final results, including +2 penalties and DNFs. Choose **Solve times and detailed CFOP timings** to also share Cross, F2L, OLL, and PLL phase durations, initial pauses, and execution times from selected completed smart-cube solves. Select **Review selected solves** to check what will be shared, then select **Get AI advice**.
 
 Each review links to a CubeSkills tutorial and uses its topic to suggest a practice drill or goal. The coach prioritizes a transition when the initial pause accounts for at least half of its phase time. Otherwise it uses the longest timed phase. With no timed CFOP splits, it links to the general practice module. Some videos require a free or Premium CubeSkills account. [CubeSkills 3×3 tutorials](https://www.cubeskills.com/categories/3x3)
 
-The configured provider receives timing and case metrics when you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. In local server mode, the provider token stays on the server after you save settings. Provider usage charges may apply.
+The configured provider receives the selected timing and case metrics. Follow-ups include the recent chat messages, and the conversation lasts while the review is open. The app omits raw moves, scrambles, saved comments, session names, and Bluetooth identifiers from the metrics. In local server mode, the provider token stays on the server after you save settings. Provider usage charges may apply.
 
-The included server listens on loopback for personal use. A public deployment that supplies a shared provider can use an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
+The included server listens on loopback for personal use. A public deployment that supplies a shared provider can use an authenticated, rate-limited same-origin `POST /api/coach` endpoint. The first request sends a metrics object. Follow-ups send `{ metrics, conversation }` with alternating assistant and user messages. The endpoint returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
 
 ## Manage sessions and backups
 

@@ -5,9 +5,9 @@
   const Core = typeof module !== 'undefined' && module.exports ? require('./coach-core.js') : global.CoachCore;
   let browserProvider = null;
 
-  async function review(metrics, signal) {
+  async function review(metrics, signal, conversation = []) {
     if (browserProvider) {
-      const prepared = Core.prepareReview(metrics);
+      const prepared = Core.prepareReview(metrics, conversation);
       if (!prepared) throw new Error('Choose valid solve data for advice.');
       try {
         return await Core.completeReview(browserProvider, prepared, signal);
@@ -25,7 +25,7 @@
         redirect: 'error',
         headers: { 'Content-Type': 'application/json' },
         signal,
-        body: JSON.stringify(metrics),
+        body: JSON.stringify(conversation.length ? { metrics, conversation } : metrics),
       });
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -102,6 +102,6 @@
   }
 
   global.AICoach = {
-    review, providerSettings, providerModels, browserSettings, setBrowserProvider, clearBrowserProvider,
+    review, providerSettings, providerModels, browserSettings, setBrowserProvider, clearBrowserProvider, chatLimits: Core.CHAT_LIMITS,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
