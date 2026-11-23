@@ -53,7 +53,7 @@ In **Settings → Input method**, select **Type times in**. Enter a result and p
 1. Open Cube Timer at localhost or over HTTPS in Chrome or Edge with Web Bluetooth enabled. Turn on Bluetooth in the operating system.
 2. Close CubeStation and other apps using the cube. Rotate the white face to wake the iCarry 4. [GAN iCarry 4 manual and product page](https://www.gancube.com/products/gan-i-carry-4-smart-cube)
 3. Select a **3x3** or **3x3 One-Handed** session. In **Settings → Input method**, select **Timer (Space / touch)**.
-4. Select **Connect smart cube → Choose cube**, then select the GAN device in the browser’s Bluetooth picker. If Cube Timer asks for the Bluetooth address, enter the cube’s six-byte MAC address, such as `AA:BB:CC:DD:EE:FF`, and choose the cube again.
+4. Select **Connect smart cube → Choose cube**, then select the GAN device and click **Pair** in the browser’s picker. If the browser cannot read the address, enter the cube’s six-byte Bluetooth address and select **Continue pairing**. Cube Timer remembers the address in this browser after it reads the cube successfully. [Find your GAN cube’s Bluetooth address](https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71)
 5. Wait for the cube name and **Live cube** sticker net to appear. Open **Cube info** to read the battery and hardware details the cube reports. Use **Refresh device info** to request them again.
 
 The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-web-bluetooth), loaded from jsDelivr. The driver detects GAN Gen2, Gen3, and Gen4 Bluetooth services. Software checks used simulated GAN notifications. Physical pairing with an iCarry 4 is still unverified.
@@ -65,6 +65,8 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 3. When the display says **Scramble matched**, turn the cube to start solving. If inspection is enabled, it starts when the scramble matches and the first solve turn ends inspection.
 4. The turn that solves the cube stops the timer and saves the result and move timeline. Press **Esc** to abort an attempt. Select **Disconnect cube** to return to manual timing.
 
+If the physical cube is solved and the live preview shows a different state, open **Cube info → Set cube as solved**. Keep the cube still while it confirms the reset. The scramble guide restarts at the beginning of the current scramble.
+
 The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The live net and replay show sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
 
 | What you see | What to try |
@@ -72,7 +74,7 @@ The timer prefers cube timestamps. It estimates clock drift from multiple turns 
 | **Connect smart cube** is missing | Select **3x3** or **3x3 One-Handed** and switch the input method to **Timer**. |
 | The browser cannot use Bluetooth | Open the app on localhost or HTTPS in a supported browser. Check OS Bluetooth permissions and adapter availability. |
 | The picker cannot find the cube | Close CubeStation, wake the cube again, and keep it near the computer or phone. |
-| The cube connects but the app cannot read its state | Check the MAC address. If the app is still connected, open **Cube info → Resync cube state**. Otherwise, reconnect and retry. |
+| The cube connects but the app cannot read its state | If still connected, open **Cube info → Resync cube state**. If pairing fails with the wrong address, choose **Use a different address** and enter the correct one. |
 
 ## Analyze and replay a smart-cube solve
 

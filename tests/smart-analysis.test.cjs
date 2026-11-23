@@ -146,6 +146,72 @@ test('rejects trace data that cannot reproduce the solved state or time', () => 
   assert.equal(Smart.drillSetup('r U'), null);
 });
 
+test('GAN pairing asks for a missing address after selection and remembers only a verified connection', async (t) => {
+  const stored = new Map();
+  const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) },
+  });
+  t.after(() => {
+    if (storage) Object.defineProperty(globalThis, 'localStorage', storage);
+    else delete globalThis.localStorage;
+  });
+  const manualDevice = { id: 'manual-gan', name: 'GAN manual' };
+  const automaticDevice = { id: 'automatic-gan', name: 'GAN automatic' };
+  const phases = [];
+  const connect = (device, options, discovered = null) => SmartCube.connect({
+    async connectGanCube(resolveAddress) {
+      phases.push('picker');
+      const mac = await resolveAddress(device, false) ?? discovered ?? await resolveAddress(device, true);
+      phases.push(mac);
+      return {
+        deviceName: device.name, deviceMAC: mac,
+        events$: { subscribe: () => ({ unsubscribe() {} }) },
+        async sendCubeCommand() {},
+        async disconnect() {},
+      };
+    },
+  }, options);
+  const requestAddress = async () => {
+    phases.push('manual');
+    return 'aa-bb-cc-dd-ee-ff';
+  };
+  const options = {
+    requestAddress,
+    onSelected: (device, remembered) => phases.push([device.id, remembered]),
+  };
+
+  assert.equal(SmartCube.normalizeAddress('8F18'), null);
+  const cube = await connect(manualDevice, options);
+  assert.deepEqual(phases, ['picker', ['manual-gan', false], 'manual', 'AA:BB:CC:DD:EE:FF']);
+  assert.equal(stored.size, 0);
+  cube.listen(() => {});
+  cube.receive({ type: 'FACELETS', facelets: 'invalid', serial: 0 });
+  assert.equal(stored.size, 0);
+  cube.receive({ type: 'FACELETS', facelets: SmartCube.SOLVED, serial: 0 });
+  assert.deepEqual([...stored.values()], ['AA:BB:CC:DD:EE:FF']);
+  await cube.disconnect();
+
+  phases.length = 0;
+  const reconnected = await connect(manualDevice, options);
+  assert.deepEqual(phases, ['picker', ['manual-gan', true], 'AA:BB:CC:DD:EE:FF']);
+  await reconnected.disconnect();
+
+  phases.length = 0;
+  const automatic = await connect(automaticDevice, options, '10:20:30:40:50:60');
+  assert.deepEqual(phases, ['picker', ['automatic-gan', false], '10:20:30:40:50:60']);
+  await automatic.disconnect();
+
+  phases.length = 0;
+  const replacement = await connect(manualDevice, {
+    ...options, manual: true, requestAddress: async () => '02:03:04:05:06:07',
+  });
+  assert.deepEqual(phases, ['picker', ['manual-gan', false], '02:03:04:05:06:07']);
+  assert.deepEqual([...stored.values()], ['AA:BB:CC:DD:EE:FF']);
+  await replacement.disconnect();
+});
+
 test('GAN battery packets, serial rollover, recovered turns and gaps follow the state stream', async () => {
   const commands = [];
   let receive;
@@ -171,6 +237,70 @@ test('GAN battery packets, serial rollover, recovered turns and gaps follow the 
   assert.equal(cube.facelets, null);
   assert.deepEqual(commands, ['REQUEST_FACELETS', 'REQUEST_BATTERY', 'REQUEST_HARDWARE', 'REQUEST_FACELETS']);
   await cube.disconnect();
+});
+
+test('reset waits for the cube to confirm solved facelets and resumes tracking at the new serial', async (t) => {
+  const commands = [];
+  const events = [];
+  let finishReset;
+  let confirmRead;
+  const readRequested = new Promise((resolve) => { confirmRead = resolve; });
+  const cube = new SmartCube({
+    events$: { subscribe: () => ({ unsubscribe() {} }) },
+    async sendCubeCommand({ type }) {
+      commands.push(type);
+      if (type === 'REQUEST_RESET') await new Promise((resolve) => { finishReset = resolve; });
+      else if (commands.length > 1) confirmRead();
+    },
+    async disconnect() {},
+  });
+  t.after(() => cube.disconnect());
+  cube.listen((event) => events.push(event.type));
+  cube.receive({ type: 'FACELETS', facelets: state('F'), serial: 90 });
+
+  assert.equal(cube.resetSolved(), true);
+  assert.equal(cube.resetSolved(), false);
+  assert.equal(events.at(-1), 'resetting');
+  cube.receive({ type: 'FACELETS', facelets: SmartCube.SOLVED, serial: 89 });
+  assert.equal(cube.facelets, null);
+  finishReset();
+  await readRequested;
+  assert.deepEqual(commands, ['REQUEST_FACELETS', 'REQUEST_RESET', 'REQUEST_FACELETS']);
+  cube.receive({ type: 'FACELETS', facelets: state('F'), serial: 90 });
+  assert.equal(cube.facelets, null);
+
+  cube.receive({ type: 'FACELETS', facelets: SmartCube.SOLVED, serial: 0 });
+  assert.equal(events.at(-1), 'reset');
+  assert.equal(cube.facelets, SmartCube.SOLVED);
+  cube.receive({ type: 'MOVE', move: 'R', serial: 1, localTimestamp: 100 });
+  assert.equal(events.at(-1), 'move');
+  assert.equal(cube.facelets, state('R'));
+});
+
+test('a failed reset resyncs the cube without reporting a solved state', async (t) => {
+  const commands = [];
+  const events = [];
+  let confirmRecovery;
+  const recoveryRequested = new Promise((resolve) => { confirmRecovery = resolve; });
+  const cube = new SmartCube({
+    events$: { subscribe: () => ({ unsubscribe() {} }) },
+    async sendCubeCommand({ type }) {
+      commands.push(type);
+      if (type === 'REQUEST_RESET') throw new Error('Bluetooth write failed');
+      if (commands.length > 1) confirmRecovery();
+    },
+    async disconnect() {},
+  });
+  t.after(() => cube.disconnect());
+  cube.listen((event) => events.push(event.type));
+  cube.receive({ type: 'FACELETS', facelets: state('F'), serial: 12 });
+  cube.resetSolved();
+  await recoveryRequested;
+  assert.deepEqual(events.slice(-2), ['reset-failed', 'syncing']);
+  cube.receive({ type: 'FACELETS', facelets: state('F'), serial: 12 });
+  assert.equal(events.at(-1), 'state');
+  assert.equal(cube.facelets, state('F'));
+  assert.equal(events.includes('reset'), false);
 });
 
 test('case summaries keep distinct patterns separate and aggregate timing', () => {
