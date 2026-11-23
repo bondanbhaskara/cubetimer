@@ -53,8 +53,28 @@
     return { target, prefixes, count: moves.length };
   }
 
-  // Fit cube clock drift against host timestamps, skipping recovered packets and
-  // Bluetooth batches that report the same host time for multiple turns.
+  function clockScale(anchors) {
+    if (anchors.length < 5 || anchors.at(-1)[0] - anchors[0][0] < 1000) return 1;
+
+    // Median pairwise slope resists isolated Bluetooth delays. Sample evenly
+    // across the solve to bound the work for long traces.
+    const count = Math.min(anchors.length, 21);
+    const sample = Array.from({ length: count }, (_, i) =>
+      anchors[Math.round(i * (anchors.length - 1) / (count - 1))]);
+    const slopes = [];
+    for (let i = 0; i < sample.length; i++) {
+      const [clock, host] = sample[i];
+      for (const [laterClock, laterHost] of sample.slice(i + 1)) {
+        slopes.push((laterHost - host) / (laterClock - clock));
+      }
+    }
+    slopes.sort((a, b) => a - b);
+    const middle = Math.floor(slopes.length / 2);
+    const slope = (slopes[middle] + slopes[Math.floor((slopes.length - 1) / 2)]) / 2;
+    return slope >= 0.8 && slope <= 1.2 ? slope : 1;
+  }
+
+  // Skip recovered packets and duplicate clock readings in the calibration.
   function calibratedClock(events) {
     const first = events[0].cubeTime;
     const last = events.at(-1).cubeTime;
@@ -63,7 +83,6 @@
     const duration = clocks.at(-1);
     if (duration <= 0 || duration > 86400000) return null;
     let previous = 0;
-    let lastHost = null;
     const anchors = [];
     for (let i = 0; i < events.length; i++) {
       const clock = clocks[i];
@@ -71,22 +90,12 @@
       if (clock < previous || clock > duration) return null;
       previous = clock;
       const host = events[i].time;
-      if (Number.isFinite(host) && host !== lastHost) {
-        anchors.push([clock, host - events[0].time]);
-        lastHost = host;
+      const lastAnchor = anchors.at(-1);
+      if (Number.isFinite(host) && (!lastAnchor || (clock > lastAnchor[0] && host > lastAnchor[1]))) {
+        anchors.push([clock, host]);
       }
     }
-    // Short solves and latency spikes are poor calibration samples.
-    let scale = 1;
-    if (anchors.length >= 3 && anchors.at(-1)[0] - anchors[0][0] >= 1000) {
-      const mean = (column) => anchors.reduce((sum, pair) => sum + pair[column], 0) / anchors.length;
-      const x = mean(0);
-      const y = mean(1);
-      const variance = anchors.reduce((sum, [cube]) => sum + (cube - x) ** 2, 0);
-      const covariance = anchors.reduce((sum, [cube, host]) => sum + (cube - x) * (host - y), 0);
-      const slope = covariance / variance;
-      if (slope >= 0.8 && slope <= 1.2) scale = slope;
-    }
+    const scale = clockScale(anchors);
     return clocks.map((clock) => clock == null ? null : clock * scale);
   }
 
@@ -246,7 +255,8 @@
       const f2l = states.findIndex((state) => atSolvedPositions(state, face.f2l));
       let cross = f2l;
       while (cross > 0 && atSolvedPositions(states[cross - 1], face.cross)) cross--;
-      const oll = states.findIndex((state, i) => i >= f2l && face.oll.every((index) => state[index] === face.lastColor));
+      const oll = states.findIndex((state, i) =>
+        i >= f2l && atSolvedPositions(state, face.f2l) && atSolvedPositions(state, face.oll));
       return { face, cross, f2l, oll };
     });
     possibilities.sort((a, b) => a.f2l - b.f2l || a.cross - b.cross);

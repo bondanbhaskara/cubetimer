@@ -65,7 +65,7 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 3. When the display says **Scramble matched**, turn the cube to start solving. If inspection is enabled, it starts when the scramble matches and the first solve turn ends inspection.
 4. The turn that solves the cube stops the timer and saves the result and move timeline. Press **Esc** to abort an attempt. Select **Disconnect cube** to return to manual timing.
 
-The timer prefers cube timestamps and calibrates clock drift when enough browser timestamps are available. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The live net and replay show sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
+The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The live net and replay show sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
 
 | What you see | What to try |
 | --- | --- |
@@ -82,7 +82,7 @@ From **Solves**, select a recorded smart-cube result. You can also select its do
 - **Inferred CFOP splits** shows time, turns, initial pause, and execution for Cross, F2L, OLL, and PLL. Initial pause is the gap before the first turn of a phase. Execution is the rest of that phase’s elapsed time. The app infers splits and possible X-cross from sticker states. Initial pause is a proxy for recognition time.
 - **OLL and PLL cases** shows the detected case and time breakdown for the current solve, plus counts and average times from earlier completed attempts of the same case in the session. The app names Sune, T-perm, and Ua-perm. Other patterns use stable app-specific identifiers. **AUF only** means the last layer only needed alignment.
 - **Solve replay** lets you play at 0.5×, 1×, or 2×, scrub the timeline, step one turn at a time, or select a phase name to jump to its end.
-- **Copy replay link** includes the scramble, move timeline, and result in the URL fragment. Open or share it using an address where the recipient can reach the app. A `localhost` link works on the machine serving it. The replay link omits comments, session names, and AI settings.
+- **Copy replay link** includes the scramble, move timeline, and result in the URL fragment. Open or share it using an address where the recipient can reach the app. A `localhost` link works on the machine serving it. The replay link omits comments and session names.
 
 ## Practice algorithms
 
@@ -109,15 +109,17 @@ The **Timer** tab shows current and best single, mo3, ao5, ao12, ao50, ao100, an
 
 ## Configure the AI coach
 
-1. Open **Settings → AI coach**.
-2. Enter the provider’s **API URL**, **Model ID**, and **API token**. The provider must support OpenAI-compatible **Chat Completions**. For example, enter a base URL such as `https://api.openai.com/v1` or a full endpoint ending in `/chat/completions`. Use HTTPS for a remote provider, or HTTP on a loopback address such as `http://localhost:11434/v1` for a local provider.
-3. Select **Save AI settings**. Open a recorded smart-cube solve for advice on that solve, or open **History & stats → AI practice review** for advice on the selected range.
-4. Select **Get AI advice**. The response suggests a practice focus and drills based on the supplied metrics. Use **Cancel request** to stop waiting.
-5. To remove the configuration, select **Clear AI settings**, reload the tab, or close it. Re-enter the settings when you start a new tab.
+The local coach server uses Node.js 22 or later and an OpenAI-compatible **Chat Completions** provider. Configure the provider through the server environment.
 
-The browser sends timing and case metrics directly to the configured provider after you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. The token is sent as a Bearer credential and is held in memory for the current tab. It is excluded from backups and replay links. Provider usage charges may apply.
+- `CUBETIMER_COACH_API_URL` accepts an HTTPS base URL such as `https://api.openai.com/v1` or the full endpoint ending in `/chat/completions`. A provider running on loopback can use HTTP, for example `http://127.0.0.1:11434/v1`.
+- `CUBETIMER_COACH_MODEL` is the exact model ID from the provider.
+- `CUBETIMER_COACH_API_TOKEN` is the provider token. A loopback provider that accepts unauthenticated requests can leave it unset.
 
-If the API cannot be reached, verify the URL and check whether the endpoint supports browser requests from your app’s origin via CORS. For token or access errors, check the token and its access to the model. Use the exact model ID supplied by your provider.
+Stop the Python server if it is running, then start the coach server with `node server.cjs` from the repository. Open [http://localhost:8080](http://localhost:8080) using the same address as your previous local session to keep access to its browser storage. Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**.
+
+The local server forwards timing and case metrics when you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. The provider token stays on the server. Provider usage charges may apply.
+
+The included server listens on loopback for personal use. A public deployment can host the core timer as static files. To offer coaching on a public site, provide an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }`.
 
 ## Manage sessions and backups
 
@@ -162,6 +164,6 @@ Use a recent version of Node.js to run the regression tests.
 node --test tests/*.test.cjs
 ```
 
-The app loads directly from [index.html](index.html). [scramble.js](js/scramble.js) generates scrambles and models sticker states, [smart-cube.js](js/smart-cube.js) handles GAN Bluetooth, [smart-analysis.js](js/smart-analysis.js) handles timing and CFOP analysis, and [ai-coach.js](js/ai-coach.js) sends optional coach requests. [app.js](js/app.js) connects these features to browser storage and the interface. [stats.js](js/stats.js), [charts.js](js/charts.js), and [metronome.js](js/metronome.js) provide their respective engines.
+The app loads directly from [index.html](index.html). [scramble.js](js/scramble.js) generates scrambles and models sticker states, [smart-cube.js](js/smart-cube.js) handles GAN Bluetooth, and [smart-analysis.js](js/smart-analysis.js) handles timing and CFOP analysis. [ai-coach.js](js/ai-coach.js) makes same-origin requests to the optional local coach server in [server.cjs](server.cjs). [app.js](js/app.js) connects these features to browser storage and the interface. [stats.js](js/stats.js), [charts.js](js/charts.js), and [metronome.js](js/metronome.js) provide their respective engines.
 
 Timer digits use DSEG7 Classic Bold Italic by keshikan under the [SIL Open Font License](fonts/DSEG-LICENSE.txt). The interface uses Roboto from Google Fonts.

@@ -1129,7 +1129,6 @@
   /* ================= Modals ================= */
 
   const modal = $('#modal');
-  let coachConfig = null;
   let coachRequest = null;
 
   function openModal(title, build) {
@@ -1561,85 +1560,39 @@
   function renderCoach(metrics) {
     const status = h('p', { class: 'muted small', role: 'status' });
     const output = h('div', { class: 'coach-output', hidden: true });
-    const controls = h('div', { class: 'row' });
-    const description = coachConfig
-      ? `Sends the displayed timing and case metrics to ${new URL(coachConfig.endpoint).host}. Requests may incur provider charges.`
-      : 'Configure an OpenAI-compatible API in Settings to get practice advice.';
-    if (coachConfig) {
-      const ask = button('Get AI advice', async () => {
-        if (coachRequest) return;
-        const request = coachRequest = new AbortController();
-        const timeout = setTimeout(() => request.abort('timeout'), 45000);
-        ask.disabled = true;
-        cancel.hidden = false;
-        output.hidden = true;
-        output.textContent = '';
-        status.textContent = 'Waiting for AI advice…';
-        try {
-          const advice = await AI.review(coachConfig, metrics, request.signal);
-          if (request.signal.aborted || !output.isConnected) return;
-          output.textContent = advice;
-          output.hidden = false;
-          status.textContent = 'AI advice ready.';
-        } catch (error) {
-          if (status.isConnected) {
-            status.textContent = request.signal.aborted
-              ? request.signal.reason === 'timeout' ? 'The API request timed out.' : 'Canceled.'
-              : error.message;
-          }
-        } finally {
-          clearTimeout(timeout);
-          if (coachRequest === request) coachRequest = null;
-          ask.disabled = false;
-          cancel.hidden = true;
-        }
-      }, 'btn primary');
-      const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
-      controls.append(ask, cancel);
-    }
-    controls.append(button('AI settings', () => openSettings(true)));
-    return h('section', { class: 'ai-coach', 'aria-label': 'AI coach' },
-      h('h4', null, 'AI coach'), h('p', { class: 'muted small' }, description), controls, status, output);
-  }
-
-  function renderCoachSettings() {
-    const url = h('input', { id: 'coach-url', type: 'url', placeholder: 'https://api.openai.com/v1', autocomplete: 'off', spellcheck: 'false' });
-    const model = h('input', { id: 'coach-model', type: 'text', placeholder: 'Provider model ID', autocomplete: 'off', spellcheck: 'false' });
-    const token = h('input', { id: 'coach-token', type: 'password', autocomplete: 'off', spellcheck: 'false' });
-    url.value = coachConfig?.endpoint || '';
-    model.value = coachConfig?.model || '';
-    const status = h('p', { class: 'muted small', role: 'status' },
-      coachConfig ? 'Configured for this tab. Leave the token blank to keep it for this endpoint.' : '');
-    const saveConfig = () => {
+    const ask = button('Get AI advice', async () => {
+      if (coachRequest) return;
+      const request = coachRequest = new AbortController();
+      const timeout = setTimeout(() => request.abort('timeout'), 45000);
+      ask.disabled = true;
+      cancel.hidden = false;
+      output.hidden = true;
+      output.textContent = '';
+      status.textContent = 'Waiting for AI advice…';
       try {
-        const keepToken = coachConfig && AI.endpointFor(url.value) === coachConfig.endpoint;
-        coachConfig = AI.configure(url.value, token.value || (keepToken ? coachConfig.token : ''), model.value);
-        token.value = '';
-        status.textContent = 'AI coach configured for this tab.';
+        const advice = await AI.review(metrics, request.signal);
+        if (request.signal.aborted || !output.isConnected) return;
+        output.textContent = advice;
+        output.hidden = false;
+        status.textContent = 'AI advice ready.';
       } catch (error) {
-        status.textContent = error.message;
+        if (status.isConnected) {
+          status.textContent = request.signal.aborted
+            ? request.signal.reason === 'timeout' ? 'The API request timed out.' : 'Canceled.'
+            : error.message;
+        }
+      } finally {
+        clearTimeout(timeout);
+        if (coachRequest === request) coachRequest = null;
+        ask.disabled = false;
+        cancel.hidden = true;
       }
-    };
-    const fields = h('div', { class: 'settings-grid' },
-      h('label', { for: url.id }, 'API URL'), url,
-      h('label', { for: model.id }, 'Model ID'), model,
-      h('label', { for: token.id }, 'API token'), token);
-    fields.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' || event.isComposing) return;
-      event.preventDefault();
-      saveConfig();
-    });
-    return h('section', { id: 'ai-settings', 'aria-labelledby': 'ai-settings-title' },
-      h('h3', { id: 'ai-settings-title', class: 'settings-section' }, 'AI coach'),
-      h('p', { class: 'muted small' }, 'Uses the OpenAI-compatible Chat Completions API. The provider must allow browser requests. The token stays in memory until the tab reloads or closes.'),
-      fields, h('div', { class: 'row' },
-        button('Save AI settings', saveConfig, 'btn primary'),
-        button('Clear AI settings', () => {
-          coachConfig = null;
-          url.value = model.value = token.value = '';
-          status.textContent = 'AI settings cleared.';
-        })),
-      status);
+    }, 'btn primary');
+    const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
+    return h('section', { class: 'ai-coach', 'aria-label': 'AI coach' },
+      h('h4', null, 'AI coach'),
+      h('p', { class: 'muted small' }, 'Sends timing and case metrics to the provider configured on the coach server. Provider charges may apply.'),
+      h('div', { class: 'row' }, ask, cancel), status, output);
   }
 
   function uniqueName(base) {
@@ -1713,7 +1666,7 @@
     });
   }
 
-  function openSettings(focusAI = false) {
+  function openSettings() {
     const st = settings();
     const sel = (label, key, options, after) => {
       const id = 'set-' + key;
@@ -1750,7 +1703,6 @@
           ...sel('Color scheme', 'theme', [['auto', 'Match system (Basic / Pro)'], ...SCHEMES], applyTheme),
           ...sel('Scramble preview', 'preview', [[true, 'Show'], [false, 'Hide']], renderScramble)
         ),
-        renderCoachSettings(),
         h('div', { class: 'settings-section' }, 'Data'),
         h(
           'div',
@@ -1777,7 +1729,6 @@
         )
       );
     });
-    if (focusAI === true) $('#coach-url').focus();
   }
 
   function exportData() {

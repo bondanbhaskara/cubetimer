@@ -484,7 +484,6 @@ body.solving .stage { border-color: transparent; }
 .ai-coach h4 { margin: 0 0 8px; }
 .ai-coach p { overflow-wrap: anywhere; }
 .coach-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); border-radius: 8px; }
-#ai-settings input { min-width: 0; }
 .solve-analysis { margin: 14px 0; }
 .solve-analysis h3, .solve-analysis h4 { margin: 14px 0 8px; }
 .solve-analysis input[type="range"] { width: 100%; accent-color: var(--accent); }
@@ -609,7 +608,7 @@ body.solving .stage { border-color: transparent; }
 .modal-body .big-time { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0 8px; }
 .modal-body .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .modal-body .scr { font-size: 15px; line-height: 1.5; white-space: pre-line; background: var(--surface-2); padding: 10px 12px; border-radius: 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
-.modal-body textarea, .modal-body input:is([type="text"], [type="url"], [type="password"]) {
+.modal-body textarea, .modal-body input[type="text"] {
   width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--page);
   padding: 8px 10px; resize: vertical;
 }

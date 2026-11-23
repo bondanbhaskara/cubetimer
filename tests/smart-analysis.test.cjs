@@ -31,18 +31,28 @@ test('uses cube timestamps across rollover and interpolates missing turns', () =
 });
 
 test('fits device clock drift and falls back to browser timing for a reset device clock', () => {
-  const samples = [
-    { move: 'R', time: 100, cubeTime: 200 },
-    { move: 'U', time: 650, cubeTime: 700 },
-    { move: 'F', time: 1200, cubeTime: 1200 },
-  ];
+  const samples = 'R U F L D'.split(' ').map((move, index) => ({
+    move, time: 100 + index * 275, cubeTime: 200 + index * 250,
+  }));
   const calibrated = Smart.finishTrace(samples, null);
   assert.equal(calibrated.clock, 'cube');
-  assert.deepEqual(calibrated.moves.map(([, t]) => t), [0, 550, 1100]);
-  samples[2].cubeTime = 20;
+  assert.deepEqual(calibrated.moves.map(([, t]) => t), [0, 275, 550, 825, 1100]);
+  samples.at(-1).cubeTime = 20;
   assert.equal(Smart.finishTrace(samples, null).clock, 'browser');
-  samples[2].time = null;
+  samples.at(-1).time = null;
   assert.equal(Smart.finishTrace(samples, null), null);
+});
+
+test('isolated Bluetooth delays do not change a stable cube clock', () => {
+  const moves = Smart.DRILLS.Sune.split(' ');
+  for (const delayed of [0, 5, 6]) {
+    const samples = moves.map((move, index) => ({
+      move, cubeTime: index * 250, time: 1000 + index * 250 + (index === delayed ? 180 : 0),
+    }));
+    const trace = Smart.finishTrace(samples, null);
+    assert.equal(trace.clock, 'cube');
+    assert.deepEqual(trace.moves.map(([, time]) => time), [0, 250, 500, 750, 1000, 1250, 1500]);
+  }
 });
 
 test('presets produce replayable cases with expected CFOP phases', () => {
@@ -72,6 +82,25 @@ test('case recognition works across cross colors and ignores PLL alignment', () 
   const moves = algorithm.split(' ').map((move, i) => [move, i * 200]);
   const aligned = Smart.analyze(Smart.drillSetup(algorithm), { moves });
   assert.equal(aligned.phases[3].case.name, 'T-perm');
+});
+
+test('PLL starts after both last-layer orientation and first-two-layer repair', () => {
+  const sune = Smart.DRILLS.Sune.split(' ');
+  const tPerm = Smart.DRILLS['T-perm'].split(' ');
+  const bottomPerm = Smart.DRILLS['Ua-perm'].replace(/U/g, 'D').split(' ');
+  const inverse = (moves) => moves.slice().reverse().map(Smart.inverse);
+  const scramble = inverse([...sune, ...tPerm]).join(' ');
+  // Finish Sune while the lower layer is disturbed, then restore it.
+  const repair = [...sune.slice(0, -1), ...bottomPerm, "R'", 'R', ...inverse(bottomPerm), "R'"];
+  const moves = [...repair, ...tPerm].map((move, index) => [move, index * 200]);
+  const trace = Smart.cleanTrace({ clock: 'cube', moves }, scramble, moves.at(-1)[1]);
+  assert.ok(trace);
+  const { phases, states } = Smart.analyze(scramble, trace);
+  assert.equal(states[sune.length + bottomPerm.length].slice(0, 9), 'UUUUUUUUU');
+  assert.equal(phases[2].end, repair.length);
+  assert.equal(phases[3].start, repair.length);
+  assert.equal(phases[3].case.name, 'T-perm');
+  assert.deepEqual(trace.moves.slice(phases[3].start).map(([move]) => move), tPerm);
 });
 
 test('rejects trace data that cannot reproduce the solved state or time', () => {
