@@ -24,7 +24,10 @@
     if (!response.ok) throw new Error(data?.error || `The coach server returned HTTP ${response.status}.`);
     const advice = data?.advice;
     if (typeof advice !== 'string' || !advice.trim()) throw new Error('The coach server did not return advice.');
-    return advice.trim();
+    const lesson = data.lesson;
+    const isTutorial = typeof lesson?.title === 'string' && lesson.title.trim() &&
+      typeof lesson.url === 'string' && /^https:\/\/www\.cubeskills\.com\/tutorials\/[a-z0-9/-]+$/.test(lesson.url);
+    return { advice: advice.trim(), lesson: isTutorial ? lesson : null };
   }
 
   global.AICoach = { review };

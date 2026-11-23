@@ -3,9 +3,25 @@
 const { readFile } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { extname, join } = require('node:path');
+const { selectPractice } = require('./coach-lessons.cjs');
+const { prepareBulkReview } = require('./coach-batch.cjs');
 
 const MAX_METRICS_BYTES = 16 * 1024;
-const COACH_PROMPT = 'You are a speedcubing practice coach. Use only the supplied aggregate or solve metrics as evidence. Times are milliseconds. Focus on one observed bottleneck, then suggest two specific practice drills or measurable goals. Keep the answer around 150 words in plain text. An initial pause is a recognition proxy, and CFOP splits and case names are inferred. Mention small samples or estimated timestamps when relevant. Do not invent move sequences, cube rotations, benchmarks or missing metrics.';
+const MAX_BULK_METRICS_BYTES = 32 * 1024;
+const COACH_PROMPT = [
+  'You are a speedcubing practice coach. Use only the supplied solve or session metrics as evidence. Times are milliseconds.',
+  'Use the selected CubeSkills lesson topic and practice idea to suggest two specific drills or measurable goals.',
+  'Treat the selected observation as a practice opportunity. An initial pause is a recognition proxy, and CFOP splits and case names are inferred.',
+  'Mention small samples or estimated timestamps when relevant. If there is no timed phase, keep the advice general.',
+  'Keep the answer around 150 words in plain text. The app supplies the lesson link.',
+  'Avoid invented lesson details, move sequences, cube rotations, benchmarks, and missing metrics.',
+].join(' ');
+const BULK_PROMPT = [
+  'The selected results are in chronological order and may come from nonconsecutive solves.',
+  'A null time is a DNF. Numeric solve times include any +2 penalties.',
+  'With solve times only, discuss observable consistency or changes in the selected results without inferring phase timings or causes.',
+  'When CFOP splits are present, use only the solves with splits for phase comparisons and mention limited coverage when relevant.',
+].join(' ');
 const ASSET_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -59,7 +75,7 @@ async function coachRequest(request, response, config) {
   try {
     for await (const chunk of request.iterator({ destroyOnReturn: false })) {
       size += chunk.length;
-      if (size > MAX_METRICS_BYTES) {
+      if (size > MAX_BULK_METRICS_BYTES) {
         request.resume();
         return json(response, 413, { error: 'The coaching request is too large.' });
       }
@@ -70,10 +86,24 @@ async function coachRequest(request, response, config) {
     if (!response.destroyed) json(response, 400, { error: 'Could not read the coaching metrics.' });
     return;
   }
-  if (!['single solve', 'filtered session history'].includes(metrics?.scope)) {
-    return json(response, 400, { error: 'Choose a recorded solve or a session range for advice.' });
+  const bulkReview = metrics?.scope === 'selected solves';
+  let practiceMetrics = metrics;
+  if (bulkReview) {
+    const bulk = prepareBulkReview(metrics);
+    if (!bulk) return json(response, 400, { error: 'Select 1 to 50 solves with valid times and choose which data to share.' });
+    metrics = bulk.metrics;
+    practiceMetrics = { scope: 'filtered session history', phases: bulk.phases };
+  } else {
+    if (size > MAX_METRICS_BYTES) return json(response, 413, { error: 'The coaching request is too large.' });
+    if (!['single solve', 'filtered session history'].includes(metrics?.scope)) {
+      return json(response, 400, { error: 'Choose a recorded solve or a session range for advice.' });
+    }
   }
 
+  const { lesson, observation, practice } = selectPractice(practiceMetrics);
+  const prompt = [COACH_PROMPT];
+  if (bulkReview) prompt.push(BULK_PROMPT);
+  prompt.push(`CubeSkills lesson topic: ${lesson.title}`, observation, `Practice idea: ${practice}`);
   const upstream = new AbortController();
   response.once('close', () => upstream.abort());
   const timer = setTimeout(() => upstream.abort(), 40000);
@@ -88,7 +118,7 @@ async function coachRequest(request, response, config) {
       body: JSON.stringify({
         model: config.model,
         messages: [
-          { role: 'system', content: COACH_PROMPT },
+          { role: 'system', content: prompt.join('\n') },
           { role: 'user', content: JSON.stringify(metrics) },
         ],
       }),
@@ -104,7 +134,7 @@ async function coachRequest(request, response, config) {
     if (typeof advice !== 'string' || !advice.trim()) {
       return json(response, 502, { error: 'The provider did not return a chat completion.' });
     }
-    json(response, 200, { advice: advice.trim() });
+    json(response, 200, { advice: advice.trim(), lesson });
   } catch {
     if (!response.destroyed) json(response, 502, { error: 'The coach server could not get a response from the provider.' });
   } finally {
