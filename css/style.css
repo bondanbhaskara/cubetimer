@@ -813,6 +813,16 @@ body.solving .stage { border-color: transparent; }
 .modal-head h2 { font-size: 16px; }
 .modal-body { padding: 6px 20px 20px; overflow-y: auto; }
 .modal-body .big-time { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0 8px; }
+.modal:has(#smart-solve-recap) { width: min(440px, calc(100vw - 32px)); }
+.solve-recap-summary { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+.solve-recap-summary > div:first-child { min-width: 0; }
+.solve-recap-summary .big-time { font-size: clamp(30px, 9vw, 44px); line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.solve-recap-cube { flex: 0 1 140px; min-width: 104px; }
+.solve-recap-metrics { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0; }
+.solve-recap-metrics dt { color: var(--ink-2); font-size: 12px; }
+.solve-recap-metrics dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#smart-solve-recap .smart-phase-table :is(th, td) { padding-block: 7px; }
+#recap-swipe-help { margin: 14px 0 0; color: var(--ink-2); text-align: center; }
 .modal-body .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .modal-body .scr { font-size: 15px; line-height: 1.5; white-space: pre-line; background: var(--surface-2); padding: 10px 12px; border-radius: 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
 .modal-body textarea, .modal-body input:is([type="text"], [type="url"], [type="password"]) {
