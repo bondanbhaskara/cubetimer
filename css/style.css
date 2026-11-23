@@ -487,6 +487,12 @@ body.solving .stage { border-color: transparent; }
 .ai-coach h4 { margin: 0 0 8px; }
 .ai-coach p { overflow-wrap: anywhere; }
 .coach-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); border-radius: 8px; }
+.bulk-review-modes { border: 0; padding: 0; margin: 12px 0; }
+.bulk-review-modes legend { font-weight: 600; margin-bottom: 4px; }
+.bulk-review-modes label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.bulk-review-list { max-height: 35dvh; overflow: auto; border-block: 1px solid var(--border); }
+.bulk-review-list th { position: sticky; top: 0; background: var(--surface); }
+.bulk-review-list input, .bulk-review-modes input { accent-color: var(--accent); }
 .solve-analysis { margin: 14px 0; }
 .solve-analysis h3, .solve-analysis h4 { margin: 14px 0 8px; }
 .solve-analysis input[type="range"] { width: 100%; accent-color: var(--accent); }

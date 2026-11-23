@@ -1306,6 +1306,10 @@
     return traceAnalysis.get(solve);
   }
 
+  function coachPhaseTiming({ label, duration, pause }) {
+    return { phase: label, timeMs: duration, initialPauseMs: pause, executionMs: duration - pause };
+  }
+
   const seconds = (ms) => `${(ms / 1000).toFixed(2)} s`;
   const cfopSplits = ({ phases, pairs }) => phases.flatMap((phase) => phase.label === 'F2L' ? [phase, ...pairs] : [phase]);
 
@@ -1438,8 +1442,7 @@
         inspectionMs: trace.inspection, timingSource: trace.clock, estimatedTimestamps: trace.estimated,
         quarterTurns: info.turns, turnsPerSecond: info.tps, longestGapMs: info.longestPause,
         phases: info.phases.filter((phase) => phase.turns).map((phase) => ({
-          phase: phase.label, timeMs: phase.duration, initialPauseMs: phase.pause,
-          executionMs: phase.duration - phase.pause, quarterTurns: phase.turns,
+          ...coachPhaseTiming(phase), quarterTurns: phase.turns,
         })),
         cases,
       }) : null);
@@ -1558,9 +1561,10 @@
     });
   }
 
-  function renderCoach(metrics) {
+  function renderCoach(metrics, sharing = 'Sends timing and case metrics to the configured AI provider.') {
     const status = h('p', { class: 'muted small', role: 'status' });
     const output = h('div', { class: 'coach-output', hidden: true });
+    const source = h('p', { class: 'small', hidden: true });
     const ask = button('Get AI advice', async () => {
       if (coachRequest) return;
       const request = coachRequest = new AbortController();
@@ -1569,12 +1573,21 @@
       cancel.hidden = false;
       output.hidden = true;
       output.textContent = '';
+      source.hidden = true;
+      source.replaceChildren();
       status.textContent = 'Waiting for AI advice…';
       try {
-        const advice = await AI.review(metrics, request.signal);
+        const { advice, lesson } = await AI.review(metrics, request.signal);
         if (request.signal.aborted || !output.isConnected) return;
         output.textContent = advice;
         output.hidden = false;
+        if (lesson) {
+          const access = lesson.access === 'premium' ? ' (Premium video)'
+            : lesson.access === 'free account' ? ' (free account required)' : '';
+          source.append(h('a', { href: lesson.url, target: '_blank', rel: 'noopener noreferrer' },
+            `CubeSkills · ${lesson.title}`), access);
+          source.hidden = false;
+        }
         status.textContent = 'AI advice ready.';
       } catch (error) {
         if (status.isConnected) {
@@ -1592,8 +1605,110 @@
     const cancel = button('Cancel request', () => coachRequest?.abort(), 'btn', { hidden: true });
     return h('section', { class: 'ai-coach', 'aria-label': 'AI coach' },
       h('h4', null, 'AI coach'),
-      h('p', { class: 'muted small' }, 'Sends timing and case metrics to the provider configured on the coach server. Provider charges may apply.'),
-      h('div', { class: 'row' }, ask, cancel), status, output);
+      h('p', { class: 'muted small' }, `${sharing} Provider charges may apply.`),
+      h('div', { class: 'row' }, ask, cancel), status, output, source);
+  }
+
+  const BULK_REVIEW_LIMIT = 50;
+  const hasBulkSplits = (solve) => !!solve.smart && solve.p !== S.PEN_DNF;
+
+  function openBulkReview(solves, offset, state = { selected: new Set(), page: 0, detail: 'times' }) {
+    const { selected } = state;
+    const latestCount = Math.min(BULK_REVIEW_LIMIT, solves.length);
+    const pageCount = Math.ceil(solves.length / BULK_REVIEW_LIMIT);
+    const restoringSelection = modal.open;
+    openModal('Bulk AI review', (body) => {
+      const count = h('span', { class: 'muted small', role: 'status' });
+      const pageLabel = h('span', { class: 'muted small' });
+      const rows = h('tbody');
+      const list = h('div', { class: 'bulk-review-list', tabindex: '0', 'aria-label': 'Solves in the selected range' },
+        h('table', { class: 'data-table' },
+          h('thead', null, h('tr', null, ['Select', 'Solve', 'Time', 'CFOP splits'].map((label) =>
+            h('th', { scope: 'col' }, label)))), rows));
+      const previous = button('Newer', () => { state.page--; renderPage(); });
+      const next = button('Older', () => { state.page++; renderPage(); });
+      const selectLatest = button(`Select latest ${latestCount}`, () => {
+        selected.clear();
+        for (let i = solves.length - latestCount; i < solves.length; i++) selected.add(i);
+        state.page = 0;
+        renderPage();
+      });
+      const clear = button('Clear selection', () => {
+        selected.clear();
+        renderPage();
+      });
+      const review = button('Review selected solves', () => {
+        const includeSplits = state.detail === 'cfop';
+        const results = [...selected].sort((a, b) => a - b).map((index) => {
+          const solve = solves[index];
+          const item = { timeMs: solve.p === S.PEN_DNF ? null : S.effective(solve) };
+          if (includeSplits && hasBulkSplits(solve)) {
+            item.phases = analyzeSolve(solve).phases.filter((phase) => phase.turns).map(coachPhaseTiming);
+          }
+          return item;
+        });
+        const withSplits = results.filter((solve) => solve.phases?.length).length;
+        const mode = includeSplits ? `CFOP timings for ${withSplits} of ${results.length}` : 'Solve times only';
+        const metrics = { scope: 'selected solves', detail: state.detail, solves: results };
+        const summary = h('p', { tabindex: '-1' }, `${results.length} selected · ${mode}`);
+        openModal('Bulk AI review', (confirmation) => {
+          confirmation.append(
+            summary,
+            button('Edit selection', () => openBulkReview(solves, offset, state)),
+            renderCoach(metrics, includeSplits
+              ? 'Sends the selected solve times and available CFOP timings to the configured AI provider.'
+              : 'Sends only the selected solve times and DNF results to the configured AI provider.'));
+        });
+        summary.focus();
+      }, 'btn primary');
+
+      function updateSelection() {
+        count.textContent = `${selected.size} of ${BULK_REVIEW_LIMIT} selected`;
+        review.disabled = clear.disabled = selected.size === 0;
+        rows.querySelectorAll('input').forEach((input) => {
+          input.disabled = selected.size >= BULK_REVIEW_LIMIT && !input.checked;
+        });
+      }
+
+      function renderPage() {
+        const end = solves.length - state.page * BULK_REVIEW_LIMIT;
+        const start = Math.max(0, end - BULK_REVIEW_LIMIT);
+        rows.replaceChildren();
+        for (let index = end - 1; index >= start; index--) {
+          const solve = solves[index];
+          const solveNumber = offset + index + 1;
+          const select = h('input', { type: 'checkbox', checked: selected.has(index), 'aria-label': `Select solve ${solveNumber}` });
+          select.addEventListener('change', () => {
+            if (select.checked) selected.add(index);
+            else selected.delete(index);
+            updateSelection();
+          });
+          rows.append(h('tr', null, h('td', null, select),
+            h('td', null, `#${solveNumber} · ${new Date(solve.d).toLocaleString()}`),
+            h('td', null, fmtSolve(solve)), h('td', null, hasBulkSplits(solve) ? 'Available' : '—')));
+        }
+        previous.disabled = state.page === 0;
+        next.disabled = state.page + 1 >= pageCount;
+        pageLabel.textContent = `Page ${state.page + 1} of ${pageCount}`;
+        list.scrollTop = 0;
+        updateSelection();
+      }
+
+      const modes = h('fieldset', { class: 'bulk-review-modes' }, h('legend', null, 'Data to share'),
+        [['times', 'Solve times only'], ['cfop', 'Solve times and detailed CFOP timings']].map(([value, label]) =>
+          h('label', null, h('input', {
+            type: 'radio', name: 'bulk-ai-detail', value, checked: state.detail === value,
+            onchange: () => { state.detail = value; },
+          }), label)));
+      body.append(
+        h('div', { class: 'row' }, selectLatest, clear, count),
+        h('div', { class: 'row', hidden: pageCount < 2 }, previous, next, pageLabel),
+        list, modes,
+        h('p', { class: 'muted small' }, 'Times include +2 penalties. CFOP details are available for completed smart-cube solves.'),
+        h('div', { class: 'row end' }, review));
+      renderPage();
+      if (restoringSelection) selectLatest.focus();
+    });
   }
 
   function uniqueName(base) {
@@ -1928,6 +2043,7 @@
     const solves = session().solves.slice(a, b);
     const times = cache.times.slice(a, b);
     const total = session().solves.length;
+    $('#bulk-ai-review').disabled = solves.length === 0;
     $('#history-empty').hidden = solves.length > 0;
     $('#history-content').hidden = solves.length === 0;
     if (solves.length) {
@@ -2275,6 +2391,10 @@
   $('#range-select').addEventListener('change', (e) => {
     hist.range = e.target.value;
     renderHistory();
+  });
+  $('#bulk-ai-review').addEventListener('click', () => {
+    const [start, end] = rangeBounds();
+    if (start < end) openBulkReview(session().solves.slice(start, end), start);
   });
   $('#bin-select').addEventListener('change', (e) => {
     hist.bin = e.target.value;
