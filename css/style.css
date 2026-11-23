@@ -617,7 +617,7 @@ body.solving .stage { border-color: transparent; }
 .modal-body .big-time { font-size: 44px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0 8px; }
 .modal-body .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .modal-body .scr { font-size: 15px; line-height: 1.5; white-space: pre-line; background: var(--surface-2); padding: 10px 12px; border-radius: 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
-.modal-body textarea, .modal-body input[type="text"] {
+.modal-body textarea, .modal-body input:is([type="text"], [type="url"], [type="password"]) {
   width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--page);
   padding: 8px 10px; resize: vertical;
 }
@@ -640,6 +640,7 @@ body.solving .stage { border-color: transparent; }
 .settings-grid label { color: var(--ink-2); }
 .settings-grid select { border: 1px solid var(--border); background: var(--surface); padding: 6px 10px; border-radius: 8px; }
 .settings-section { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 8px; }
+.coach-settings .field { margin: 10px 0; }
 .session-list { list-style: none; padding: 0; margin: 0 0 12px; }
 .session-list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
 .session-list li .grow { flex: 1; }

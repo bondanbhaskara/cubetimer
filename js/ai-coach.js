@@ -1,4 +1,4 @@
-/* Browser client for the same-origin AI coaching endpoint. */
+/* Browser client for the same-origin AI coach. */
 (function (global) {
   'use strict';
 
@@ -18,7 +18,7 @@
       throw new Error('Could not reach the AI coach. Open Cube Timer through the local coach server.');
     }
     if ([404, 405, 501].includes(response.status)) {
-      throw new Error('AI coaching requires the local coach server. See the README for setup.');
+      throw new Error('AI coaching requires the local coach server. See Settings → AI coach for setup.');
     }
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.error || `The coach server returned HTTP ${response.status}.`);
@@ -30,5 +30,25 @@
     return { advice: advice.trim(), lesson: isTutorial ? lesson : null };
   }
 
-  global.AICoach = { review };
+  async function providerSettings(method = 'GET', settings) {
+    const response = await fetch('./api/coach/settings', {
+      method,
+      mode: 'same-origin',
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+      ...(settings ? {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      } : {}),
+    });
+    if ([404, 405, 501].includes(response.status) && method === 'GET') return null;
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error || `The coach server returned HTTP ${response.status}.`);
+    if (!['none', 'environment', 'web'].includes(data?.source)) {
+      throw new Error('The coach server did not return provider settings.');
+    }
+    return data;
+  }
+
+  global.AICoach = { review, providerSettings };
 })(typeof window !== 'undefined' ? window : globalThis);

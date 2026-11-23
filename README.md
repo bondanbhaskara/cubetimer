@@ -109,13 +109,17 @@ The **Timer** tab shows current and best single, mo3, ao5, ao12, ao50, ao100, an
 
 ## Configure the AI coach
 
-The local coach server uses Node.js 22 or later and an OpenAI-compatible **Chat Completions** provider. Configure the provider through the server environment.
+The local coach server uses Node.js 22 or later and an OpenAI-compatible **Chat Completions** provider. Stop the Python server if it is running, then start the coach server with `node server.cjs` from the repository. Open [http://localhost:8080](http://localhost:8080) using the same address as your previous local session to keep access to its browser storage.
+
+Open **Settings → AI coach**, enter the provider URL, exact model ID, and API token, then choose **Save settings**. The provider URL can be an HTTPS base URL such as `https://api.openai.com/v1` or a full endpoint ending in `/chat/completions`. A loopback provider can use HTTP and an empty token if it accepts unauthenticated requests. The settings stay in server memory until the server restarts or you select **Clear saved settings**.
+
+You can also supply defaults through the server environment. Settings saved from the web override these defaults for the current server run.
 
 - `CUBETIMER_COACH_API_URL` accepts an HTTPS base URL such as `https://api.openai.com/v1` or the full endpoint ending in `/chat/completions`. A provider running on loopback can use HTTP, for example `http://127.0.0.1:11434/v1`.
 - `CUBETIMER_COACH_MODEL` is the exact model ID from the provider.
 - `CUBETIMER_COACH_API_TOKEN` is the provider token. A loopback provider that accepts unauthenticated requests can leave it unset.
 
-Stop the Python server if it is running, then start the coach server with `node server.cjs` from the repository. Open [http://localhost:8080](http://localhost:8080) using the same address as your previous local session to keep access to its browser storage. Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**.
+Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**.
 
 Use **History & stats → Bulk AI review** to select up to 50 solves in the current range. Check individual solves or select the latest 50 available. Choose **Solve times only** to share final results, including +2 penalties and DNFs. Choose **Solve times and detailed CFOP timings** to also share Cross, F2L, OLL, and PLL phase durations, initial pauses, and execution times from selected completed smart-cube solves. Select **Review selected solves** to check what will be shared, then select **Get AI advice**.
 
@@ -123,7 +127,7 @@ Each review links to a CubeSkills tutorial and uses its topic to suggest a pract
 
 The local server forwards timing and case metrics when you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. The provider token stays on the server. Provider usage charges may apply.
 
-The included server listens on loopback for personal use. A public deployment can host the core timer as static files. To offer coaching on a public site, provide an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
+The included server listens on loopback for personal use. GitHub Pages serves the static timer and shows a link to local setup in **AI coach settings**. To offer coaching on a public site, provide an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
 
 ## Manage sessions and backups
 
