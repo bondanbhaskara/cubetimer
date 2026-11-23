@@ -48,7 +48,7 @@
     }
 
     setOrientation(pitch, yaw) {
-      this.pitch = Math.max(-90, Math.min(90, pitch));
+      this.pitch = pitch % 360;
       this.yaw = yaw % 360;
       this.scene.style.transform = `rotateX(${this.pitch}deg) rotateY(${this.yaw}deg)`;
     }
