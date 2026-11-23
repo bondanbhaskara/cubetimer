@@ -43,12 +43,28 @@
       this.model = null;
       this.serial = null;
       this.syncTimer = 0;
+      this.battery = null;
+      this.hardware = null;
+      this.readingInfo = false;
     }
 
     listen(onEvent) {
       this.onEvent = onEvent;
       this.subscription = this.connection.events$.subscribe((event) => this.receive(event));
       this.sync();
+    }
+
+    async readDeviceInfo() {
+      if (this.readingInfo) return;
+      this.readingInfo = true;
+      try {
+        for (const type of ['REQUEST_BATTERY', 'REQUEST_HARDWARE']) {
+          if (!this.subscription || this.subscription.closed) return;
+          await this.connection.sendCubeCommand({ type }).catch(() => {});
+        }
+      } finally {
+        this.readingInfo = false;
+      }
     }
 
     sync() {
@@ -66,6 +82,16 @@
     receive(event) {
       if (event.type === 'DISCONNECT') {
         this.onEvent({ type: 'disconnect' });
+        return;
+      }
+      if (event.type === 'BATTERY' && Number.isFinite(event.batteryLevel)) {
+        this.battery = Math.max(0, Math.min(100, Math.round(event.batteryLevel)));
+        this.onEvent({ type: 'device' });
+        return;
+      }
+      if (event.type === 'HARDWARE') {
+        this.hardware = event;
+        this.onEvent({ type: 'device' });
         return;
       }
       if (!Number.isInteger(event.serial)) return;
@@ -88,7 +114,7 @@
         this.serial = serial;
         applyMove(this.model, event.move);
         this.facelets = cubeFacelets(this.model);
-        this.onEvent({ type: 'move', previous, time: event.localTimestamp, move: event.move });
+        this.onEvent({ type: 'move', previous, time: event.localTimestamp, cubeTime: event.cubeTimestamp, move: event.move });
       }
     }
 
@@ -96,6 +122,7 @@
       clearTimeout(this.syncTimer);
       this.syncTimer = 0;
       this.subscription?.unsubscribe();
+      this.subscription = null;
       if (!alreadyDisconnected) await this.connection.disconnect();
     }
   }
