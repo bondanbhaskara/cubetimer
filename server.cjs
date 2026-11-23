@@ -3,55 +3,17 @@
 const { readFile } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { extname, join } = require('node:path');
-const { selectPractice } = require('./coach-lessons.cjs');
-const { prepareBulkReview } = require('./coach-batch.cjs');
+const { configureCoach, prepareReview, completeReview, ProviderError } = require('./js/coach-core.js');
 
 const MAX_METRICS_BYTES = 16 * 1024;
 const MAX_BULK_METRICS_BYTES = 32 * 1024;
 const MAX_SETTINGS_BYTES = 16 * 1024;
-const COACH_PROMPT = [
-  'You are a speedcubing practice coach. Use only the supplied solve or session metrics as evidence. Times are milliseconds.',
-  'Use the selected CubeSkills lesson topic and practice idea to suggest two specific drills or measurable goals.',
-  'Treat the selected observation as a practice opportunity. An initial pause is a recognition proxy, and CFOP splits and case names are inferred.',
-  'Mention small samples or estimated timestamps when relevant. If there is no timed phase, keep the advice general.',
-  'Keep the answer around 150 words in plain text. The app supplies the lesson link.',
-  'Avoid invented lesson details, move sequences, cube rotations, benchmarks, and missing metrics.',
-].join(' ');
-const BULK_PROMPT = [
-  'The selected results are in chronological order and may come from nonconsecutive solves.',
-  'A null time is a DNF. Numeric solve times include any +2 penalties.',
-  'With solve times only, discuss observable consistency or changes in the selected results without inferring phase timings or causes.',
-  'When CFOP splits are present, use only the solves with splits for phase comparisons and mention limited coverage when relevant.',
-].join(' ');
 const ASSET_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.woff2': 'font/woff2',
 };
-
-function configureCoach(url, token, model) {
-  let endpoint;
-  try {
-    endpoint = new URL(url.trim());
-  } catch {
-    throw new Error('Enter a complete provider URL.');
-  }
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-  if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && loopback)) {
-    throw new Error('Use HTTPS for a remote provider or HTTP for a loopback provider.');
-  }
-  if (endpoint.username || endpoint.password || endpoint.hash) {
-    throw new Error('Use a provider URL without credentials or a fragment.');
-  }
-  const path = endpoint.pathname.replace(/\/+$/, '');
-  endpoint.pathname = path.endsWith('/chat/completions') ? path : (path || '/v1') + '/chat/completions';
-  if ((!loopback && !token.trim()) || /[^\x21-\x7e]/.test(token.trim())) {
-    throw new Error('Enter a valid provider API token. Loopback providers can use a blank token.');
-  }
-  if (!model.trim()) throw new Error('Enter the provider model ID.');
-  return { endpoint: endpoint.href, token: token.trim(), model: model.trim() };
-}
 
 function json(response, status, data) {
   response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -92,58 +54,26 @@ async function coachRequest(request, response, config) {
   if (!config) return json(response, 503, { error: 'Open Settings → AI coach to configure a provider.' });
   const body = await readJsonBody(request, response, MAX_BULK_METRICS_BYTES, 'Coaching metrics');
   if (!body) return;
-  let metrics = body.value;
-  const bulkReview = metrics?.scope === 'selected solves';
-  let practiceMetrics = metrics;
-  if (bulkReview) {
-    const bulk = prepareBulkReview(metrics);
-    if (!bulk) return json(response, 400, { error: 'Select 1 to 50 solves with valid times and choose which data to share.' });
-    metrics = bulk.metrics;
-    practiceMetrics = { scope: 'filtered session history', phases: bulk.phases };
-  } else {
-    if (body.size > MAX_METRICS_BYTES) return json(response, 413, { error: 'The coaching request is too large.' });
-    if (!['single solve', 'filtered session history'].includes(metrics?.scope)) {
-      return json(response, 400, { error: 'Choose a recorded solve or a session range for advice.' });
-    }
+  const bulkReview = body.value?.scope === 'selected solves';
+  if (!bulkReview && body.size > MAX_METRICS_BYTES) {
+    return json(response, 413, { error: 'The coaching request is too large.' });
   }
-
-  const { lesson, observation, practice } = selectPractice(practiceMetrics);
-  const prompt = [COACH_PROMPT];
-  if (bulkReview) prompt.push(BULK_PROMPT);
-  prompt.push(`CubeSkills lesson topic: ${lesson.title}`, observation, `Practice idea: ${practice}`);
+  const review = prepareReview(body.value);
+  if (!review) {
+    return json(response, 400, { error: bulkReview
+      ? 'Select 1 to 50 solves with valid times and choose which data to share.'
+      : 'Choose a recorded solve or a session range for advice.' });
+  }
   const upstream = new AbortController();
   response.once('close', () => upstream.abort());
   const timer = setTimeout(() => upstream.abort(), 40000);
-  const headers = { 'Content-Type': 'application/json' };
-  if (config.token) headers.Authorization = 'Bearer ' + config.token;
   try {
-    const result = await fetch(config.endpoint, {
-      method: 'POST',
-      headers,
-      redirect: 'error',
-      signal: upstream.signal,
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: prompt.join('\n') },
-          { role: 'user', content: JSON.stringify(metrics) },
-        ],
-      }),
-    });
-    if (!result.ok) {
-      await result.body?.cancel();
-      if ([401, 403].includes(result.status)) return json(response, 502, { error: 'The provider rejected the token or model access.' });
-      if (result.status === 429) return json(response, 429, { error: 'The provider rate limit or quota was reached.' });
-      return json(response, 502, { error: `The provider returned HTTP ${result.status}.` });
-    }
-    const data = await result.json();
-    const advice = data?.choices?.[0]?.message?.content;
-    if (typeof advice !== 'string' || !advice.trim()) {
-      return json(response, 502, { error: 'The provider did not return a chat completion.' });
-    }
-    json(response, 200, { advice: advice.trim(), lesson });
-  } catch {
-    if (!response.destroyed) json(response, 502, { error: 'The coach server could not get a response from the provider.' });
+    const advice = await completeReview(config, review, upstream.signal);
+    if (!response.destroyed) json(response, 200, advice);
+  } catch (error) {
+    if (response.destroyed) return;
+    if (error instanceof ProviderError) return json(response, error.status, { error: error.message });
+    json(response, 502, { error: 'The coach server could not get a response from the provider.' });
   } finally {
     clearTimeout(timer);
   }
