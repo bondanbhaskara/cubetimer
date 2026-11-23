@@ -545,7 +545,8 @@
   const smartTiming = () => smart.cube && smartEligible();
 
   function smartHint() {
-    const { facelets } = smart.cube;
+    const { facelets, resetRequest } = smart.cube;
+    if (resetRequest) return 'Resetting the cube state…';
     if (!facelets) return 'Reading the cube state…';
     if (!smart.guide) return 'Use a scramble with U, R, F, D, L and B face turns.';
     if (facelets === smart.guide.target) return settings().inspection
@@ -567,6 +568,8 @@
     const battery = smart.cube?.battery;
     $('#smart-cube-battery').textContent = battery == null ? '' : `Battery ${battery}%`;
     if ($('#cube-device-info')) renderCubeInfo($('#cube-device-info'));
+    const setSolved = $('#cube-set-solved-btn');
+    if (setSolved) setSolved.disabled = !smart.cube?.facelets;
     $('#smart-drills-btn').hidden = !smartEligible();
     const drill = session().drill;
     $('#end-drill-btn').hidden = !drill;
@@ -632,8 +635,16 @@
     smart.attempt = null;
     attempt.status.textContent = message || '';
     attempt.connect.disabled = false;
-    attempt.address.disabled = false;
+    attempt.actions.hidden = false;
+    attempt.retry.hidden = !message || !attempt.selected;
     renderSmartCube();
+  }
+
+  function cancelCubeAttempt() {
+    const attempt = smart.attempt;
+    if (!attempt) return;
+    attempt.controller.abort();
+    if (smart.cube) disconnectSmartCube().then(() => finishCubeAttempt(attempt));
   }
 
   function handleCubeEvent(event) {
@@ -651,22 +662,32 @@
       return;
     }
 
-    if (event.type === 'state' || event.type === 'syncing') {
+    if (event.type === 'reset-failed') {
+      toast(event.message);
+      return;
+    }
+
+    if (['state', 'syncing', 'resetting', 'reset'].includes(event.type)) {
       if (smartTiming() && T.state !== 'idle') {
         cancelTimer();
         toast('Timing canceled because the cube state changed unexpectedly');
       }
       if (event.type === 'state' && attempt) {
-        if (!attempt.status.isConnected || !modal.open) {
+        if (!attempt.status.isConnected || !modal.open || attempt.controller.signal.aborted) {
           disconnectSmartCube().then(() => finishCubeAttempt(attempt));
           return;
         }
         finishCubeAttempt(attempt);
         modal.close();
         smart.cube.readDeviceInfo();
+      } else {
+        renderSmartCube();
       }
-      if (event.type === 'syncing') $('#smart-cube-move').textContent = '';
+      if (event.type !== 'state') {
+        $('#smart-cube-move').textContent = event.type === 'resetting' ? 'Resetting the cube state…' : '';
+      }
       updateSmartTarget();
+      if (event.type === 'reset') toast('Cube set as solved.');
       return;
     }
 
@@ -1133,6 +1154,7 @@
 
   function openModal(title, build) {
     coachRequest?.abort();
+    cancelCubeAttempt();
     if (smartTiming() && T.state !== 'idle') cancelTimer();
     $('#modal-title').textContent = title;
     const body = $('#modal-body');
@@ -1142,13 +1164,14 @@
   }
 
   modal.addEventListener('close', () => {
-    if (!modal.open) coachRequest?.abort();
+    if (!modal.open) {
+      coachRequest?.abort();
+      cancelCubeAttempt();
+    }
     const providerToken = $('#coach-provider-token');
     if (providerToken) providerToken.value = '';
     window.Charts.hideTip();
     if (currentView === 'timer') document.activeElement && document.activeElement.blur();
-    const attempt = smart.attempt;
-    if (attempt && smart.cube && !modal.open) disconnectSmartCube().then(() => finishCubeAttempt(attempt));
     if (smartTiming()) updateSmartReadiness();
   });
 
@@ -1159,20 +1182,78 @@
         return;
       }
 
-      const address = h('input', { type: 'text', id: 'cube-address', autocomplete: 'off', spellcheck: 'false', placeholder: 'AA:BB:CC:DD:EE:FF' });
       const status = h('p', { class: 'muted small', role: 'status' }, 'Loading Bluetooth support…');
       let driver;
-      const connect = button('Choose cube', async () => {
-        const attempt = { address, status, connect };
+      const connect = button('Choose cube', () => startPairing(false), 'btn primary', { disabled: true });
+      const retry = button('Use a different address', () => startPairing(true), 'btn', { hidden: true });
+      const actions = h('div', { class: 'row end' }, retry, connect);
+
+      function askForAddress(signal, manual) {
+        signal.throwIfAborted();
+        status.textContent = manual ? 'Enter a Bluetooth address for the selected cube.'
+          : 'The browser could not read the cube’s Bluetooth address. Enter it to continue.';
+        actions.hidden = true;
+        const address = h('input', {
+          type: 'text', id: 'cube-address', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
+          placeholder: 'AA:BB:CC:DD:EE:FF', required: true,
+        });
+        const form = h('form', null,
+          h('label', { class: 'field', for: address.id }, 'Bluetooth address', address),
+          h('p', { class: 'small' }, h('a', {
+            href: 'https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71',
+            target: '_blank', rel: 'noopener noreferrer',
+          }, 'Find your GAN cube’s Bluetooth address')),
+          h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'btn primary' }, 'Continue pairing')));
+        body.insertBefore(form, actions);
+        address.focus();
+        return new Promise((resolve, reject) => {
+          const close = () => {
+            signal.removeEventListener('abort', cancel);
+            form.remove();
+          };
+          const cancel = () => {
+            close();
+            reject(signal.reason);
+          };
+          signal.addEventListener('abort', cancel, { once: true });
+          address.addEventListener('input', () => address.setCustomValidity(''));
+          form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const mac = SmartCube.normalizeAddress(address.value);
+            if (!mac) {
+              address.setCustomValidity('Enter all six bytes of the Bluetooth address.');
+              address.reportValidity();
+              return;
+            }
+            close();
+            status.textContent = 'Connecting to the cube…';
+            resolve(mac);
+          });
+        });
+      }
+
+      async function startPairing(manual) {
+        if (!driver || smart.attempt) return;
+        const attempt = { status, connect, actions, retry, controller: new AbortController(), selected: false };
+        const { signal } = attempt.controller;
         smart.attempt = attempt;
-        connect.disabled = address.disabled = true;
-        status.textContent = 'Waiting for the cube…';
+        connect.disabled = true;
+        retry.hidden = true;
+        status.textContent = 'Select your cube in the browser’s Bluetooth picker.';
         renderSmartCube();
         if (metroSettings().auto) metro.prime();
         try {
-          const cube = await SmartCube.connect(driver, address.value);
-          if (!modal.open || !status.isConnected) {
-            await cube.disconnect();
+          const cube = await SmartCube.connect(driver, {
+            signal, manual,
+            onSelected: (device, remembered) => {
+              attempt.selected = true;
+              status.textContent = remembered ? `Connecting to ${device.name || 'the cube'}…`
+                : 'Looking up the cube’s Bluetooth address…';
+            },
+            requestAddress: () => askForAddress(signal, manual),
+          });
+          if (signal.aborted || !modal.open || !status.isConnected) {
+            await cube.disconnect().catch(() => {});
             finishCubeAttempt(attempt);
             return;
           }
@@ -1182,22 +1263,17 @@
           cube.listen(handleCubeEvent);
         } catch (error) {
           if (smart.cube) await disconnectSmartCube();
-          finishCubeAttempt(attempt, error.name === 'NotFoundError'
-            ? 'No cube was selected. Wake the cube and try again.'
-            : error.message || 'Could not connect to the cube.');
+          const message = signal.aborted ? ''
+            : error.name === 'NotFoundError' && !attempt.selected ? 'No cube was selected. Wake the cube and try again.'
+            : error.message || 'Could not connect to the cube.';
+          finishCubeAttempt(attempt, message);
         }
-      }, 'btn primary', { disabled: true });
-      address.addEventListener('keydown', (event) => {
-        if (event.code !== 'Enter' || event.isComposing) return;
-        event.preventDefault();
-        connect.click();
-      });
+      }
 
       body.append(
         h('p', { class: 'muted small' }, 'Close CubeStation and turn the white face of your GAN iCarry 4 to wake it.'),
-        h('div', { class: 'settings-grid' }, h('label', { for: address.id }, 'Bluetooth address (if needed)'), address),
         status,
-        h('div', { class: 'row end' }, connect)
+        actions
       );
 
       SmartCube.loadDriver().then((module) => {
@@ -1233,13 +1309,20 @@
     openModal('Cube info', (body) => {
       const info = h('dl', { id: 'cube-device-info', class: 'cube-device-info' });
       renderCubeInfo(info);
-      body.append(info, h('div', { class: 'row end' },
-        button('Refresh device info', () => smart.cube?.readDeviceInfo()),
-        button('Resync cube state', () => {
-          smart.cube?.sync();
-          modal.close();
-        })
-      ));
+      body.append(
+        info,
+        h('p', { class: 'muted small' }, 'Solve the physical cube before setting it as solved here. Keep it still until the reset finishes.'),
+        h('div', { class: 'row end' },
+          button('Refresh device info', () => smart.cube?.readDeviceInfo()),
+          button('Resync cube state', () => {
+            smart.cube?.sync();
+            modal.close();
+          }),
+          button('Set cube as solved', () => {
+            if (smart.cube?.resetSolved()) modal.close();
+          }, 'btn primary', { id: 'cube-set-solved-btn', disabled: !smart.cube?.facelets })
+        )
+      );
     });
   }
 
