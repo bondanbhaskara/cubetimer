@@ -188,9 +188,8 @@ body.at-timer { height: 100vh; height: 100dvh; overflow: hidden; }
 .smart-cube-status .link-btn { font-size: inherit; }
 .drill-algorithm, .scramble-guide { margin: 6px 0 0; text-align: center; overflow-wrap: anywhere; }
 .scramble-guide { font-weight: 600; }
-.live-cube { align-self: center; width: 144px; margin: 4px auto; text-align: center; }
-.live-cube svg, .smart-replay-net svg { display: block; width: 100%; height: auto; }
-.live-cube .facelet, .smart-replay-net .facelet { stroke: #0009; stroke-width: 0.6; }
+.smart-replay-net svg { display: block; width: 100%; height: auto; }
+.smart-replay-net .facelet { stroke: #0009; stroke-width: 0.6; }
 .cube-device-info { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
 .cube-device-info dt { color: var(--muted); }
 .cube-device-info dd { margin: 0; overflow-wrap: anywhere; }
@@ -330,6 +329,83 @@ body.at-timer { height: 100vh; height: 100dvh; overflow: hidden; }
 }
 .preview svg { display: block; width: 100%; height: auto; }
 .preview .facelet { stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.6; }
+
+.target-label { display: none; text-align: center; margin-top: 4px; }
+
+/* Live smart cube */
+.stage:has(.live-cube:not([hidden])) { overflow-y: auto; }
+.stage-tools:has(.live-cube:not([hidden])) {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.stage-tools:has(.live-cube:not([hidden])) .metronome { position: static; flex: none; }
+.stage-previews:has(.live-cube:not([hidden])) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+.stage-previews:has(.live-cube:not([hidden])) .preview { position: static; min-width: 0; }
+.stage-previews:has(.live-cube:not([hidden])) .target-label { display: block; }
+.live-cube { flex: none; text-align: center; }
+.live-cube-caption { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.live-cube-reset { color: inherit; font-size: 16px; line-height: 1; }
+.live-cube-view {
+  position: relative;
+  width: 140px;
+  height: 132px;
+  perspective: 500px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.live-cube-view:active { cursor: grabbing; }
+.live-cube-view::before {
+  content: '';
+  position: absolute;
+  inset: auto 13% 2px;
+  height: 14px;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.25), transparent 70%);
+}
+.live-cube-scene, .live-cube-layer, .live-cubie {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-style: preserve-3d;
+}
+.live-cube-scene {
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+.live-cube-face {
+  position: absolute;
+  width: 27px;
+  height: 27px;
+  left: -13.5px;
+  top: -13.5px;
+  backface-visibility: hidden;
+  background: #22262a;
+}
+.live-cube-face.sticker {
+  border: 1.5px solid #22262a;
+  border-radius: 3px;
+  background-image: linear-gradient(155deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.12));
+  background-color: var(--sticker-color);
+}
+
+@media (min-width: 981px) and (max-height: 700px) {
+  .stage:has(.live-cube:not([hidden])) .timer-area {
+    --timer-size: min(20dvh, 12vw, 150px);
+    min-height: min-content;
+    gap: 6px;
+  }
+  .stage-previews:has(.live-cube:not([hidden])) .preview { width: 180px; }
+}
 
 /* Metronome */
 .icon-btn[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
@@ -717,6 +793,9 @@ body.solving .stage { border-color: transparent; }
   .scramble-text { font-size: 18px; }
   .preview { position: static; width: 170px; margin: 8px auto 0; }
   .metronome { position: static; width: 100%; max-width: 340px; margin: 8px auto 0; }
+  .stage-tools:has(.live-cube:not([hidden])) { display: block; }
+  .stage-previews:has(.live-cube:not([hidden])) { margin: 8px auto 0; }
+  .stage-previews:has(.live-cube:not([hidden])) .preview { margin: 0; }
   .sidebar { grid-template-columns: 1fr; }
   .history-view { padding: 12px 16px 32px; }
   .filter-summary { margin-left: 0; width: 100%; }
