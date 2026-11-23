@@ -522,6 +522,7 @@
     newScramble();
     showLastTime();
     hint();
+    if (trace) openSolveRecap(solve);
   }
 
   function cancelTimer() {
@@ -628,7 +629,7 @@
     const live = $('#live-cube');
     live.hidden = !facelets;
     if (facelets && !liveCubeView) {
-      liveCubeView = new window.CubeView($('#live-cube-view'), STICKER, $('#live-cube-reset'));
+      liveCubeView = new window.CubeView($('#live-cube-view'), STICKER, { resetButton: $('#live-cube-reset') });
     }
     if (liveCubeView && liveCubeView.facelets !== facelets) liveCubeView.setState(facelets);
     renderScrambleGuide(facelets);
@@ -724,6 +725,7 @@
       return;
     }
 
+    if (modal.open && $('#smart-solve-recap')) modal.close();
     $('#smart-cube-move').textContent = `Last turn ${event.move}`;
     if (liveCubeView?.facelets === event.previous) liveCubeView.turn(event.move, smart.cube.facelets);
     if (!smart.guide) return renderLiveCube();
@@ -1520,6 +1522,29 @@
     );
   }
 
+  function openSolveRecap(solve) {
+    const { phases, turns, tps } = analyzeSolve(solve);
+    openModal('Solve recap', (body) => {
+      const cube = h('div', { class: 'live-cube-view solve-recap-cube', role: 'img',
+        'aria-label': 'Solved cube', 'aria-describedby': 'recap-swipe-help' });
+      const view = new window.CubeView(cube, STICKER, { onSwipe: () => modal.close() });
+      view.setState(SmartCube.SOLVED);
+      const rows = phases.map(({ label, duration, turns }) => [label, seconds(duration), turns]);
+      const table = phaseTable(rows, ['CFOP phase', 'Time', 'Turns']);
+      table.setAttribute('aria-label', 'CFOP solve recap');
+      body.append(h('section', { id: 'smart-solve-recap' },
+        h('div', { class: 'solve-recap-summary' },
+          h('div', null,
+            h('p', { class: 'big-time' }, fmtSolve(solve)),
+            h('dl', { class: 'solve-recap-metrics' },
+              h('div', null, h('dt', null, 'Quarter turns'), h('dd', null, turns)),
+              h('div', null, h('dt', null, 'Turns per second'), h('dd', null, tps == null ? '–' : tps.toFixed(2))))),
+          cube),
+        table,
+        h('p', { class: 'small', id: 'recap-swipe-help' }, 'Swipe the 3D cube or make a turn on your connected cube to close.')));
+    });
+  }
+
   function caseComparison(phase, cases) {
     if (!phase.case) return { phase: phase.label, skipped: true };
     const group = cases?.get(`${phase.label}:${phase.case.key}`);
@@ -1567,7 +1592,7 @@
       'aria-describedby': 'replay-orbit-help replay-position' });
     const reset = h('button', { type: 'button', class: 'link-btn live-cube-reset',
       'aria-label': 'Reset replay cube view', title: 'Reset cube view' }, '↺');
-    const cube = new window.CubeView(orbit, STICKER, reset);
+    const cube = new window.CubeView(orbit, STICKER, { resetButton: reset });
     const position = h('p', { class: 'replay-position', id: 'replay-position' });
     const slider = h('input', { type: 'range', min: 0, max: last, value: 0, 'aria-label': 'Replay turn' });
     const speed = h('select', { 'aria-label': 'Replay speed' },

@@ -24,7 +24,7 @@
   }
 
   class CubeView {
-    constructor(container, colors, resetButton) {
+    constructor(container, colors, { resetButton, onSwipe } = {}) {
       this.colors = colors;
       this.scene = div('live-cube-scene');
       this.layer = div('live-cube-layer');
@@ -44,7 +44,7 @@
       }
       container.append(this.scene);
       this.setOrientation(...DEFAULT_VIEW);
-      this.bindRotation(container, resetButton);
+      this.bindRotation(container, resetButton, onSwipe);
     }
 
     setOrientation(pitch, yaw) {
@@ -53,12 +53,13 @@
       this.scene.style.transform = `rotateX(${this.pitch}deg) rotateY(${this.yaw}deg)`;
     }
 
-    bindRotation(container, resetButton) {
+    bindRotation(container, resetButton, onSwipe) {
       const reset = () => this.setOrientation(...DEFAULT_VIEW);
       let drag = null;
       container.addEventListener('pointerdown', (event) => {
         if (!event.isPrimary || event.button !== 0) return;
-        drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        const { pointerId, clientX, clientY } = event;
+        drag = { id: pointerId, x: clientX, y: clientY, startX: clientX, startY: clientY };
         container.setPointerCapture(drag.id);
       });
       container.addEventListener('pointermove', (event) => {
@@ -72,6 +73,14 @@
       container.addEventListener('lostpointercapture', (event) => {
         if (drag?.id === event.pointerId) drag = null;
       });
+      if (onSwipe) {
+        container.addEventListener('pointerup', (event) => {
+          if (drag?.id === event.pointerId && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 36) {
+            onSwipe();
+          }
+        });
+      }
+      if (!resetButton) return;
       container.addEventListener('keydown', (event) => {
         const rotation = ROTATION_KEYS[event.code];
         if (rotation) this.setOrientation(this.pitch + rotation[0], this.yaw + rotation[1]);

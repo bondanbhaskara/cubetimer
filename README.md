@@ -65,7 +65,7 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 1. Begin with the physical cube solved. Hold it with **white on top** and **green in front** to follow the displayed notation. The guide highlights the next turn, marks completed moves, and fills the progress bar as you go. For a double turn such as `R2`, either direction works.
 2. If you turn away from a recognized scramble position, follow the **Undo** instruction. If you connect while scrambled and the app cannot identify the position in the scramble, solve the cube to start again.
 3. When the display says **Scramble matched**, turn the cube to start solving. If inspection is enabled, it starts when the scramble matches and the first solve turn ends inspection.
-4. The turn that solves the cube stops the timer and saves the result and move timeline. Press **Esc** to abort an attempt. Select **Disconnect cube** to return to manual timing.
+4. The turn that solves the cube stops the timer and saves the result and move timeline. The recap shows the four CFOP splits, total quarter turns, and turns per second. Swipe the on-screen 3D cube or turn a face on the connected cube to dismiss it. Press **Esc** during a solve to abort an attempt. Select **Disconnect cube** to return to manual timing.
 
 If the physical cube is solved and the live preview shows a different state, open **Cube info → Set cube as solved**. Keep the cube still while it confirms the reset. The scramble guide restarts at the beginning of the current scramble.
 
