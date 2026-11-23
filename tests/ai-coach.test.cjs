@@ -16,6 +16,10 @@ const pllLesson = {
   url: 'https://www.cubeskills.com/tutorials/intermediate-last-layer/pll-recognition',
   access: 'free account',
 };
+const conversation = [
+  { role: 'assistant', content: 'Review the PLL pause.' },
+  { role: 'user', content: 'How should I practice recognition?' },
+];
 
 async function listen(server, t) {
   server.listen(0, '127.0.0.1');
@@ -82,6 +86,12 @@ test('the browser sends only metrics to the same-origin route', async (t) => {
   assert.deepEqual(await AI.review(metrics, controller.signal), { advice: 'Review the PLL pause.', lesson: null });
   fetch.mock.mockImplementationOnce(async () => new Response('', { status: 501 }));
   await assert.rejects(AI.review(metrics, controller.signal), /connect to a provider/);
+  fetch.mock.mockImplementationOnce(async (url, options) => {
+    assert.equal(url, './api/coach');
+    assert.deepEqual(JSON.parse(options.body), { metrics, conversation });
+    return Response.json({ advice: 'Name the case before turning.' });
+  });
+  assert.equal((await AI.review(metrics, controller.signal, conversation)).advice, 'Name the case before turning.');
 });
 
 test('direct browser coaching discovers models and sends only selected metrics to the configured provider', async (t) => {
@@ -122,6 +132,14 @@ test('direct browser coaching discovers models and sends only selected metrics t
   }, signal);
   assert.equal(response.advice, 'Practice a steady pace.');
   assert.equal(response.lesson.title, 'Practicing');
+  fetch.mock.mockImplementationOnce(async (url, options) => {
+    const { messages } = JSON.parse(options.body);
+    assert.deepEqual(JSON.parse(messages[1].content), metrics);
+    assert.deepEqual(messages.slice(2), conversation);
+    assert.match(messages[0].content, /answer the latest question directly/);
+    return Response.json({ choices: [{ message: { content: 'Name the case before turning.' } }] });
+  });
+  assert.equal((await AI.review(metrics, signal, conversation)).advice, 'Name the case before turning.');
   fetch.mock.mockImplementationOnce(async () => { throw new TypeError('fetch failed'); });
   await assert.rejects(AI.review(metrics, signal), /browser access \(CORS\)/);
   AI.clearBrowserProvider();
@@ -168,6 +186,16 @@ test('the relay keeps the provider token server-side and rejects cross-origin re
   assert.match(calls[0].payload.messages[0].content, /CubeSkills lesson topic: PLL Recognition/);
   assert.match(calls[0].payload.messages[0].content, /PLL initial pause: 600 ms of 900 ms/);
   assert.deepEqual(JSON.parse(calls[0].payload.messages.at(-1).content), metrics);
+
+  const followUp = JSON.stringify({ metrics, conversation });
+  assert.equal((await send(app, followUp)).status, 200);
+  assert.deepEqual(JSON.parse(calls[1].payload.messages[1].content), metrics);
+  assert.deepEqual(calls[1].payload.messages.slice(2), conversation);
+  const bad = [{ role: 'system', content: 'Invalid role.' }, conversation[1]];
+  assert.equal((await send(app, JSON.stringify({ metrics, conversation: bad }))).status, 400);
+  const oversized = [conversation[0], { role: 'user', content: 'x'.repeat(AI.chatLimits.user + 1) }];
+  assert.equal((await send(app, JSON.stringify({ metrics, conversation: oversized }))).status, 400);
+  assert.equal(calls.length, 2);
 
   providerStatus = 401;
   const rejected = await send(app);

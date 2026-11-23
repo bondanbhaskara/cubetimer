@@ -114,7 +114,13 @@
         <button class="link-btn" id="smart-cube-info" type="button">Cube info</button>
       </div>
       <p class="drill-algorithm small muted" id="drill-algorithm" hidden></p>
-      <p class="scramble-guide small" id="scramble-guide" hidden></p>
+      <div class="scramble-guide small" id="scramble-guide" hidden>
+        <div class="scramble-guide-readout" role="status">
+          <span id="scramble-guide-status"></span>
+          <span id="scramble-guide-count"></span>
+        </div>
+        <div class="scramble-guide-track" aria-hidden="true"></div>
+      </div>
 
       <div class="timer-area" id="timer-area">
         <div class="timer-display" id="timer-display">
@@ -325,6 +331,7 @@
   <script src="js/metronome.js"></script>
   <script src="js/smart-cube.js"></script>
   <script src="js/cube-view.js"></script>
+  <script src="js/case-algorithms.js"></script>
   <script src="js/smart-analysis.js"></script>
   <script src="js/coach-core.js"></script>
   <script src="js/ai-coach.js"></script>

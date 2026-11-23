@@ -1,4 +1,4 @@
-/* 3D view of the live 3×3 facelets and detected layer turns. */
+/* Rotatable 3D view of 3×3 facelets and layer turns. */
 (function (global) {
   'use strict';
 
@@ -128,21 +128,21 @@
       if (facelets) this.paint(facelets);
     }
 
-    turn(move, facelets) {
-      // A backlog can happen when multiple turns arrive in a Bluetooth packet.
-      if (this.motion.matches || document.hidden || this.pending.length >= 3) {
+    turn(move, facelets, maxDuration = Infinity) {
+      // Skip animation when there is too little time to show a turn clearly.
+      if (this.motion.matches || document.hidden || maxDuration < 32 || this.pending.length >= 3) {
         this.setState(facelets);
         return;
       }
       this.facelets = facelets;
-      this.pending.push({ move, facelets });
+      this.pending.push({ move, facelets, maxDuration });
       if (!this.animation) this.playNextTurn();
     }
 
     playNextTurn() {
       const next = this.pending.shift();
       if (!next) return;
-      const { move, facelets } = next;
+      const { move, facelets, maxDuration } = next;
       const { axis, side } = FACES[move[0]];
       const amount = move[1] === '2' ? 2 : move[1] === "'" ? -1 : 1;
       const angle = 90 * (axis === 1 ? -side : side) * amount;
@@ -154,7 +154,7 @@
         { transform: `${rotate}(0deg)` },
         { transform: `${rotate}(${angle}deg)` },
       ], {
-        duration: (amount === 2 ? 150 : 110) / (1 + this.pending.length / 2),
+        duration: Math.min(maxDuration, (amount === 2 ? 150 : 110) / (1 + this.pending.length / 2)),
         easing: 'ease-out',
         fill: 'forwards',
       });

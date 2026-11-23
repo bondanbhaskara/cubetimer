@@ -4,14 +4,15 @@
 
   const { applyMove, applyScramble, cubeFacelets, cubeFromFacelets, netPosition } = global.Scramble;
   const { SOLVED, FACE_TURN } = global.SmartCube;
+  const algorithms = typeof module !== 'undefined' && module.exports ? require('./case-algorithms.js') : global.CaseAlgorithms;
   const FACES = 'URFDLB';
   const MAX_TURNS = 2048;
   const CLOCK_WRAP = 2 ** 32;
   const CROSS_COLORS = { U: 'White', R: 'Red', F: 'Green', D: 'Yellow', L: 'Orange', B: 'Blue' };
   const DRILLS = {
-    Sune: "R U R' U R U2 R'",
-    'T-perm': "R U R' U' R' F R2 U' R' U' R U R' F'",
-    'Ua-perm': "R U' R U R U R U' R' U' R2",
+    Sune: algorithms.OLL[27],
+    'T-perm': algorithms.PLL.T,
+    'Ua-perm': algorithms.PLL.Ua,
   };
 
   function tokens(text) {
@@ -231,15 +232,20 @@
     Y: '002200012230',
     Z: '010030010030',
   };
+  function catalogEntry(key, name, algorithm) {
+    const setup = algorithm ? drillSetup(algorithm) : '';
+    return [key, { key, name, skip: !algorithm, algorithm: algorithm || null,
+      facelets: setup ? cubeFacelets(applyScramble(3, setup)) : SOLVED }];
+  }
+
   const casesByType = {
     OLL: new Map(ollPatterns.map((pattern, id) => {
       const key = pattern.toString(2).padStart(21, '0');
       const label = ollNames[id] ? `OLL ${id} (${ollNames[id]})` : `OLL ${id}`;
-      return [key, { key, name: id ? label : 'OLL skip', skip: id === 0 }];
+      return catalogEntry(key, id ? label : 'OLL skip', algorithms.OLL[id]);
     })),
-    PLL: new Map(Object.entries(pllPatterns).map(([id, key]) => [key, {
-      key, name: id === 'Skip' ? 'PLL skip / AUF only' : `${id}-perm`, skip: id === 'Skip',
-    }])),
+    PLL: new Map(Object.entries(pllPatterns).map(([id, key]) =>
+      catalogEntry(key, id === 'Skip' ? 'PLL skip / AUF only' : `${id}-perm`, algorithms.PLL[id]))),
   };
   const caseCatalog = (type) => [...casesByType[type].values()];
 
