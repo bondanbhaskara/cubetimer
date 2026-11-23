@@ -79,8 +79,8 @@ The timer prefers cube timestamps. It estimates clock drift from multiple turns 
 From **Solves**, select a recorded smart-cube result. You can also select its dot on the **History & stats** progress chart.
 
 - **Smart cube analysis** shows quarter turns, average turns per second (TPS), longest gap between turns, and inspection time when recorded.
-- **Inferred CFOP splits** shows time, turns, initial pause, and execution for Cross, F2L, OLL, and PLL. Initial pause is the gap before the first turn of a phase. Execution is the rest of that phase’s elapsed time. The app infers splits and possible X-cross from sticker states. Initial pause is a proxy for recognition time.
-- **OLL and PLL cases** shows the detected case and time breakdown for the current solve, plus counts and average times from earlier completed attempts of the same case in the session. The app names Sune, T-perm, and Ua-perm. Other patterns use stable app-specific identifiers. **AUF only** means the last layer only needed alignment.
+- **Inferred CFOP splits** shows time, quarter turns, initial pause, and execution for Cross, F2L total and each of the four pairs, OLL, and PLL. The app splits at the first aligned cross and the first time each number of F2L slots is solved with that cross. Pairs already in place can share a checkpoint. Initial pause is the gap before the first turn of a phase. Execution is the rest of that phase’s elapsed time.
+- **OLL and PLL cases** shows the detected case, its time breakdown, and stats from earlier completed attempts in the session. The app recognizes all [57 OLL](https://www.cubeskills.com/uploads/pdf/tutorials/oll-algorithms.pdf) and [21 PLL](https://www.cubeskills.com/uploads/pdf/tutorials/pll-algorithms.pdf) cases, plus skips. **AUF only** means the last layer only needed alignment.
 - **Solve replay** lets you play at 0.5×, 1×, or 2×, scrub the timeline, step one turn at a time, or select a phase name to jump to its end.
 - **Copy replay link** includes the scramble, move timeline, and result in the URL fragment. Open or share it using an address where the recipient can reach the app. A `localhost` link works on the machine serving it. The replay link omits comments and session names.
 
@@ -103,7 +103,7 @@ Select **History & stats** in the top bar or **Charts →** in the solves panel.
 | **Progress** | Inspect individual solves and rolling ao5, ao12, and ao100. Toggle series in the legend. Hover over a point or focus the chart and use **← / →** to inspect results. Select a point to open that solve. |
 | **Distribution** | Use automatic histogram bins or choose **Bin width**. Read the mean, median, and P10–P90 strip. The table shows counts, shares, and the cumulative share below each time threshold. Hover over a row or bar to highlight its counterpart. |
 | **Percentiles & spread**, **Averages**, **By day** | Review spread, current/best/worst rolling averages, and daily results. Rolling averages are shown by the date or solve where the window ends. |
-| **Smart cube performance** | Review completed smart-cube solves, average TPS and quarter turns, longest gaps, inferred phase averages, and X-cross frequency. OLL and PLL tables give per-case counts, averages, best times, and pause and execution breakdowns. |
+| **Smart cube performance** | Review completed smart-cube solves, average TPS and quarter turns, longest gaps, inferred phase and F2L pair averages, and X-cross frequency. Expand the OLL and PLL tables to see every case with its count, average turns and time, best time, pause, and execution in the selected range. |
 
 The **Timer** tab shows current and best single, mo3, ao5, ao12, ao50, ao100, and ao1000 as results become available. Select a time or average there to inspect its solves. A mean of three uses all three results. Averages trim the fastest and slowest 5%, rounded up on each end. An average is DNF if it has more DNFs than the number of results trimmed from the slow end.
 

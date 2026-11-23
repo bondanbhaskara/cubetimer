@@ -480,6 +480,9 @@ body.solving .stage { border-color: transparent; }
 .case-details, .ai-coach, .ai-history-actions { margin-top: 16px; }
 .case-details :is(h3, h4) { margin: 12px 0 6px; }
 .case-details th:first-child { overflow-wrap: anywhere; }
+.case-catalog { border-top: 1px solid var(--border); }
+.case-catalog summary { cursor: pointer; font-weight: 500; padding: 8px 0; }
+.case-catalog .smart-phase-table { min-width: 420px; }
 .ai-coach { border-top: 1px solid var(--border); padding-top: 12px; }
 .ai-coach h4 { margin: 0 0 8px; }
 .ai-coach p { overflow-wrap: anywhere; }

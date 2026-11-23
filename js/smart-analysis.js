@@ -159,7 +159,7 @@
     const layer = (sticker) => dot(sticker.p, normal);
     const cross = solvedModel.stickers.filter((sticker) => layer(sticker) === 2 &&
       sticker.p.filter((coordinate) => coordinate !== 0).length === 2).map(faceIndex);
-    const pairs = solvedModel.stickers.filter((sticker) => layer(sticker) === 2 &&
+    const pairs = solvedModel.stickers.filter((sticker) => sticker.color === color &&
       sticker.p.every((coordinate) => coordinate !== 0)).map((corner) =>
       solvedModel.stickers.filter((sticker) => sticker.p.every((coordinate, i) =>
         normal[i] ? coordinate === 2 * normal[i] || coordinate === 0 : coordinate === corner.p[i])).map(faceIndex));
@@ -196,21 +196,60 @@
     return keys.sort()[0];
   }
 
-  const drillNames = new Map();
-  const yellow = faces.find((face) => face.color === 'D');
-  for (const [name, algorithm] of Object.entries(DRILLS)) {
-    const setup = cubeFacelets(applyScramble(3, drillSetup(algorithm)));
-    const phase = atSolvedPositions(setup, yellow.oll) ? 'PLL' : 'OLL';
-    if (atSolvedPositions(setup, yellow.f2l)) drillNames.set(caseKey(setup, yellow, phase), name);
-  }
+  // Canonical keys from the standard CubeSkills case sheets, in case order.
+  const ollPatterns = [
+    0x1ff000, // Skip
+    0x0105d7, 0x0105bb, 0x0114db, 0x011cb6, 0x01b05b, 0x01b836, 0x0330d9, 0x01e136, 0x072994, 0x072299, // 1–10
+    0x01e25a, 0x0338b4, 0x03c658, 0x039c34, 0x039459, 0x03c534, 0x05459a, 0x0154ba, 0x0154d6, 0x155492, // 11–20
+    0x0ba145, 0x0ba129, 0x0bf028, 0x0bf044, 0x0fe108, 0x0bb824, 0x0bb049, 0x15f012, 0x09d446, 0x073898, // 21–30
+    0x01f056, 0x0370d4, 0x079c18, 0x03d454, 0x076294, 0x05e11a, 0x076198, 0x05e216, 0x07c518, 0x0d618a, // 31–40
+    0x073095, 0x09d42a, 0x01f03a, 0x0370b8, 0x079415, 0x03d438, 0x01aa56, 0x01a95a, 0x01a13b, 0x01a237, // 41–50
+    0x038635, 0x038539, 0x01a157, 0x01aa3a, 0x038e38, 0x038555, 0x17d410, // 51–57
+  ];
+  const ollNames = { 21: 'H', 22: 'Pi', 23: 'Headlights', 24: 'Chameleon', 25: 'Bowtie', 26: 'Anti-Sune', 27: 'Sune' };
+  const pllPatterns = {
+    Skip: '000000000000',
+    Aa: '002203303300',
+    Ab: '001101102200',
+    E: '012210012210',
+    F: '000021103320',
+    Ga: '011123320030',
+    Gb: '020021133310',
+    Gc: '001121132230',
+    Gd: '002213313320',
+    H: '020020020020',
+    Ja: '000001113330',
+    Jb: '000011133300',
+    Na: '022200022200',
+    Nb: '002220002220',
+    Ra: '001103310030',
+    Rb: '010031103300',
+    T: '001123300020',
+    Ua: '000010010020',
+    Ub: '000020030030',
+    V: '002210032200',
+    Y: '002200012230',
+    Z: '010030010030',
+  };
+  const casesByType = {
+    OLL: new Map(ollPatterns.map((pattern, id) => {
+      const key = pattern.toString(2).padStart(21, '0');
+      const label = ollNames[id] ? `OLL ${id} (${ollNames[id]})` : `OLL ${id}`;
+      return [key, { key, name: id ? label : 'OLL skip', skip: id === 0 }];
+    })),
+    PLL: new Map(Object.entries(pllPatterns).map(([id, key]) => [key, {
+      key, name: id === 'Skip' ? 'PLL skip / AUF only' : `${id}-perm`, skip: id === 'Skip',
+    }])),
+  };
+  const caseCatalog = (type) => [...casesByType[type].values()];
 
   function identifyCase(states, face, phase) {
     const { label, start, end } = phase;
-    if (start === end || !['PLL', 'OLL'].includes(label)) return null;
+    if (!casesByType[label]) return null;
     const key = caseKey(states[start], face, label);
-    if (key === '000000000000') return { key, name: 'AUF only' };
-    const code = parseInt(key, label === 'OLL' ? 2 : 4).toString(36).toUpperCase();
-    return { key, name: drillNames.get(key) || `${label} pattern ${code}` };
+    const detected = casesByType[label].get(key);
+    if (label === 'PLL' && detected?.skip) return { ...detected, name: start === end ? 'PLL skip' : 'AUF only' };
+    return detected ?? null;
   }
 
   function caseStats(results) {
@@ -221,18 +260,23 @@
         if (!detected) continue;
         const id = `${phase.label}:${detected.key}`;
         if (!groups.has(id)) {
-          groups.set(id, { name: detected.name, type: phase.label, count: 0, time: 0, pause: 0, best: Infinity });
+          const name = casesByType[phase.label].get(detected.key)?.name ?? detected.name;
+          groups.set(id, { name, type: phase.label, count: 0, turns: 0, time: 0, pause: 0, best: Infinity });
         }
         const group = groups.get(id);
         group.count++;
+        group.turns += phase.turns;
         group.time += phase.duration;
         group.pause += phase.pause;
         group.best = Math.min(group.best, phase.duration);
-        if (phase.end - phase.start <= 100) group.example = { index, start: phase.start, end: phase.end };
+        if (!detected.skip && phase.end > phase.start && phase.end - phase.start <= 100) {
+          group.example = { index, start: phase.start, end: phase.end };
+        }
       }
     });
     for (const group of groups.values()) {
       group.averageMs = Math.round(group.time / group.count);
+      group.averageTurns = group.turns / group.count;
       group.averagePauseMs = Math.round(group.pause / group.count);
       group.averageExecutionMs = Math.round((group.time - group.pause) / group.count);
     }
@@ -253,27 +297,35 @@
     const last = states.length - 1;
     const possibilities = faces.map((face) => {
       const f2l = states.findIndex((state) => atSolvedPositions(state, face.f2l));
-      let cross = f2l;
-      while (cross > 0 && atSolvedPositions(states[cross - 1], face.cross)) cross--;
+      const cross = states.findIndex((state) => atSolvedPositions(state, face.cross));
       const oll = states.findIndex((state, i) =>
         i >= f2l && atSolvedPositions(state, face.f2l) && atSolvedPositions(state, face.oll));
       return { face, cross, f2l, oll };
     });
     possibilities.sort((a, b) => a.f2l - b.f2l || a.cross - b.cross);
     const { face, cross, f2l, oll } = possibilities[0];
-    const phases = [
-      ['Cross', 0, cross], ['F2L', cross, f2l], ['OLL', f2l, oll], ['PLL', oll, last],
-    ].map(([label, start, end]) => ({
+    const split = (label, start, end) => ({
       label, start, end,
       duration: times[end] - times[start],
       turns: turns[end] - turns[start],
       pause: end > start ? times[start + 1] - times[start] : 0,
       case: identifyCase(states, face, { label, start, end }),
-    }));
+    });
+    const phases = [split('Cross', 0, cross), split('F2L', cross, f2l), split('OLL', f2l, oll), split('PLL', oll, last)];
+    const pairs = [];
+    let pairStart = cross;
+    for (let i = cross; i <= f2l && pairs.length < face.pairs.length; i++) {
+      if (!atSolvedPositions(states[i], face.cross)) continue;
+      const solved = face.pairs.filter((pair) => atSolvedPositions(states[i], pair)).length;
+      while (pairs.length < solved) {
+        pairs.push(split(`F2L pair ${pairs.length + 1}`, pairStart, i));
+        pairStart = i;
+      }
+    }
     let longestPause = 0;
     for (let i = 2; i < times.length; i++) longestPause = Math.max(longestPause, times[i] - times[i - 1]);
     return {
-      states, times, phases, crossColor: CROSS_COLORS[face.color],
+      states, times, phases, pairs, crossColor: CROSS_COLORS[face.color],
       xcross: cross > 0 && cross < last && face.pairs.some((pair) => atSolvedPositions(states[cross], pair)),
       turns: turns[last],
       tps: times[last] > 0 ? 1000 * turns[last] / times[last] : null,
@@ -281,5 +333,5 @@
     };
   }
 
-  global.SmartAnalysis = { analyze, caseStats, cleanTrace, drillSetup, finishTrace, inverse, scrambleGuide, DRILLS, MAX_TURNS };
+  global.SmartAnalysis = { analyze, caseCatalog, caseStats, cleanTrace, drillSetup, finishTrace, inverse, scrambleGuide, DRILLS, MAX_TURNS };
 })(typeof window !== 'undefined' ? window : globalThis);
