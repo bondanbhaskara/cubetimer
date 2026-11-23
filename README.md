@@ -109,6 +109,12 @@ The **Timer** tab shows current and best single, mo3, ao5, ao12, ao50, ao100, an
 
 ## Configure the AI coach
 
+### Connect directly from the browser
+
+On the hosted Cube Timer page, open **Settings → AI coach**. Enter an OpenAI-compatible provider URL and a token intended for browser use, then select **Connect**. If the provider lists a single model, Cube Timer selects it. Otherwise, choose or enter the model ID. The provider must allow requests from the page’s origin through CORS. The browser keeps the connection in memory for the current tab until you reload or select **Disconnect browser**.
+
+### Use the local coach server
+
 The local coach server uses Node.js 22 or later and an OpenAI-compatible **Chat Completions** provider. Stop the Python server if it is running, then start the coach server with `node server.cjs` from the repository. Open [http://localhost:8080](http://localhost:8080) using the same address as your previous local session to keep access to its browser storage.
 
 Open **Settings → AI coach**, enter the provider URL, exact model ID, and API token, then choose **Save settings**. The provider URL can be an HTTPS base URL such as `https://api.openai.com/v1` or a full endpoint ending in `/chat/completions`. A loopback provider can use HTTP and an empty token if it accepts unauthenticated requests. The settings stay in server memory until the server restarts or you select **Clear saved settings**.
@@ -125,9 +131,9 @@ Use **History & stats → Bulk AI review** to select up to 50 solves in the curr
 
 Each review links to a CubeSkills tutorial and uses its topic to suggest a practice drill or goal. The coach prioritizes a transition when the initial pause accounts for at least half of its phase time. Otherwise it uses the longest timed phase. With no timed CFOP splits, it links to the general practice module. Some videos require a free or Premium CubeSkills account. [CubeSkills 3×3 tutorials](https://www.cubeskills.com/categories/3x3)
 
-The local server forwards timing and case metrics when you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. The provider token stays on the server. Provider usage charges may apply.
+The configured provider receives timing and case metrics when you request advice. The request omits raw moves, scrambles, comments, session names, and Bluetooth identifiers. In local server mode, the provider token stays on the server after you save settings. Provider usage charges may apply.
 
-The included server listens on loopback for personal use. GitHub Pages serves the static timer and shows a link to local setup in **AI coach settings**. To offer coaching on a public site, provide an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
+The included server listens on loopback for personal use. A public deployment that supplies a shared provider can use an authenticated, rate-limited same-origin `POST /api/coach` endpoint that accepts the metrics and returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
 
 ## Manage sessions and backups
 
@@ -172,6 +178,6 @@ Use a recent version of Node.js to run the regression tests.
 node --test tests/*.test.cjs
 ```
 
-The app loads directly from [index.html](index.html). [scramble.js](js/scramble.js) generates scrambles and models sticker states, [smart-cube.js](js/smart-cube.js) handles GAN Bluetooth, and [smart-analysis.js](js/smart-analysis.js) handles timing and CFOP analysis. [ai-coach.js](js/ai-coach.js) makes same-origin requests to the optional local coach server in [server.cjs](server.cjs). [app.js](js/app.js) connects these features to browser storage and the interface. [stats.js](js/stats.js), [charts.js](js/charts.js), and [metronome.js](js/metronome.js) provide their respective engines.
+The app loads directly from [index.html](index.html). [scramble.js](js/scramble.js) generates scrambles and models sticker states, [smart-cube.js](js/smart-cube.js) handles GAN Bluetooth, and [smart-analysis.js](js/smart-analysis.js) handles timing and CFOP analysis. [ai-coach.js](js/ai-coach.js) handles browser connections and requests to the optional coach relay in [server.cjs](server.cjs). Both use [coach-core.js](js/coach-core.js) for lesson selection and provider requests. [app.js](js/app.js) connects these features to browser storage and the interface. [stats.js](js/stats.js), [charts.js](js/charts.js), and [metronome.js](js/metronome.js) provide their respective engines.
 
 Timer digits use DSEG7 Classic Bold Italic by keshikan under the [SIL Open Font License](fonts/DSEG-LICENSE.txt). The interface uses Roboto from Google Fonts.

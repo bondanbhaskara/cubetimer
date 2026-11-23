@@ -1,8 +1,22 @@
-/* Browser client for the same-origin AI coach. */
+/* Browser client for direct and server-backed coaching. */
 (function (global) {
   'use strict';
 
+  const Core = typeof module !== 'undefined' && module.exports ? require('./coach-core.js') : global.CoachCore;
+  let browserProvider = null;
+
   async function review(metrics, signal) {
+    if (browserProvider) {
+      const prepared = Core.prepareReview(metrics);
+      if (!prepared) throw new Error('Choose valid solve data for advice.');
+      try {
+        return await Core.completeReview(browserProvider, prepared, signal);
+      } catch (error) {
+        if (signal?.aborted || error instanceof Core.ProviderError) throw error;
+        throw new Error('Could not reach the provider from this page. Check the URL and the provider’s browser access (CORS).');
+      }
+    }
+
     let response;
     try {
       response = await fetch('./api/coach', {
@@ -14,11 +28,11 @@
         body: JSON.stringify(metrics),
       });
     } catch (error) {
-      if (signal.aborted) throw error;
-      throw new Error('Could not reach the AI coach. Open Cube Timer through the local coach server.');
+      if (signal?.aborted) throw error;
+      throw new Error('Could not reach the AI coach. Open Settings → AI coach to connect to a provider.');
     }
     if ([404, 405, 501].includes(response.status)) {
-      throw new Error('AI coaching requires the local coach server. See Settings → AI coach for setup.');
+      throw new Error('Open Settings → AI coach to connect to a provider.');
     }
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.error || `The coach server returned HTTP ${response.status}.`);
@@ -50,5 +64,44 @@
     return data;
   }
 
-  global.AICoach = { review, providerSettings };
+  async function providerModels(endpoint, token) {
+    const provider = Core.configureProvider(endpoint, token);
+    const url = new URL(provider.endpoint);
+    url.pathname = url.pathname.replace(/\/chat\/completions$/, '/models');
+    try {
+      const response = await fetch(url.href, {
+        credentials: 'omit',
+        redirect: 'error',
+        signal: AbortSignal.timeout(8000),
+        headers: provider.token ? { Authorization: 'Bearer ' + provider.token } : {},
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return [];
+      }
+      const { data } = await response.json();
+      if (!Array.isArray(data)) return [];
+      return [...new Set(data.map((model) => model?.id).filter((id) => typeof id === 'string' && id.trim()))].sort();
+    } catch {
+      return [];
+    }
+  }
+
+  function browserSettings() {
+    if (!browserProvider) return null;
+    const { endpoint, model } = browserProvider;
+    return { endpoint, model };
+  }
+
+  function setBrowserProvider(endpoint, token, model) {
+    browserProvider = Core.configureCoach(endpoint, token, model);
+  }
+
+  function clearBrowserProvider() {
+    browserProvider = null;
+  }
+
+  global.AICoach = {
+    review, providerSettings, providerModels, browserSettings, setBrowserProvider, clearBrowserProvider,
+  };
 })(typeof window !== 'undefined' ? window : globalThis);

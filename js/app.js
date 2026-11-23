@@ -1854,9 +1854,6 @@
   function openCoachSettings() {
     openModal('AI coach settings', (body) => {
       const status = h('p', { class: 'muted small', role: 'status' }, 'Checking the coach server…');
-      const localHelp = h('p', { class: 'small', hidden: true }, 'Start Cube Timer with ',
-        h('code', null, 'node server.cjs'), ', then open ',
-        h('a', { href: 'http://localhost:8080/' }, 'Cube Timer on localhost'), ' to configure your provider.');
       const endpoint = h('input', {
         type: 'url', required: true, placeholder: 'https://api.example.com/v1', autocapitalize: 'off', spellcheck: 'false',
       });
@@ -1874,15 +1871,19 @@
         event.preventDefault();
         updateSettings('PUT', { endpoint: endpoint.value, model: model.value, token: token.value });
       });
-      body.append(status, localHelp, form, button('Back to Settings', openSettings));
+      const useBrowser = button('Connect from this browser', () => {
+        token.value = '';
+        renderBrowserCoachSettings(body, true);
+      }, 'btn', { hidden: true });
+      body.append(status, form, h('div', { class: 'row' }, useBrowser, button('Back to Settings', openSettings)));
 
       function displaySettings(settings, saved = false) {
-        form.hidden = !settings;
-        localHelp.hidden = !!settings;
-        if (!settings) {
-          status.textContent = 'Provider settings require the local Cube Timer server.';
+        if (settings && AI.browserSettings()) {
+          renderBrowserCoachSettings(body, true);
           return;
         }
+        form.hidden = false;
+        useBrowser.hidden = false;
         endpoint.value = settings.endpoint;
         model.value = settings.model;
         token.value = '';
@@ -1909,13 +1910,95 @@
       }
 
       (location.protocol === 'file:' ? Promise.resolve(null) : AI.providerSettings())
+        .catch(() => null)
         .then((settings) => {
-          if (form.isConnected && modal.open) displaySettings(settings);
-        })
-        .catch(() => {
-          status.textContent = 'Could not reach the coach server. Reopen these settings to retry.';
+          if (!form.isConnected || !modal.open) return;
+          if (settings) displaySettings(settings);
+          else renderBrowserCoachSettings(body, false);
         });
     });
+  }
+
+  function renderBrowserCoachSettings(body, hasServer) {
+    const current = AI.browserSettings();
+    const savedMessage = 'Browser connection saved for this tab.';
+    const status = h('p', { class: 'muted small', role: 'status' }, current
+      ? savedMessage : 'Connect directly to an OpenAI-compatible provider.');
+    const endpoint = h('input', {
+      type: 'url', required: true, value: current?.endpoint, placeholder: 'https://api.example.com/v1',
+      autocapitalize: 'off', spellcheck: 'false',
+    });
+    const token = h('input', { id: 'coach-provider-token', type: 'password', autocomplete: 'new-password' });
+    const models = h('datalist', { id: 'coach-provider-models' });
+    const model = h('input', {
+      type: 'text', value: current?.model, required: !!current, list: 'coach-provider-models',
+      autocapitalize: 'off', spellcheck: 'false',
+    });
+    const modelField = h('label', { class: 'field', hidden: !current }, 'Model ID', model);
+    const connect = h('button', { type: 'submit', class: 'btn primary' }, current ? 'Save connection' : 'Connect');
+    const disconnect = button('Disconnect browser', () => {
+      AI.clearBrowserProvider();
+      renderBrowserCoachSettings(body, hasServer);
+    }, 'btn', { hidden: !current });
+    const form = h('form', { class: 'coach-settings', autocomplete: 'off' },
+      h('label', { class: 'field' }, 'Provider URL', endpoint),
+      h('label', { class: 'field' }, 'API token', token),
+      modelField, models,
+      h('p', { class: 'muted small' }, 'Use a token intended for browser use. It stays in this tab until reload and is sent to the provider URL you enter.'),
+      h('div', { class: 'row' }, connect, disconnect));
+
+    endpoint.addEventListener('input', () => {
+      model.value = '';
+      model.required = false;
+      modelField.hidden = true;
+      models.replaceChildren();
+      connect.textContent = 'Connect';
+    });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (connect.disabled) return;
+      const controls = [endpoint, token, model, connect, disconnect];
+      controls.forEach((control) => { control.disabled = true; });
+      let chooseModel = false;
+      try {
+        let modelId = model.value.trim();
+        if (!modelId) {
+          status.textContent = 'Looking up available models…';
+          const ids = await AI.providerModels(endpoint.value, token.value);
+          if (!form.isConnected || !modal.open) return;
+          if (ids.length !== 1) {
+            modelField.hidden = false;
+            model.required = true;
+            models.replaceChildren(...ids.map((id) => h('option', { value: id })));
+            connect.textContent = 'Save connection';
+            status.textContent = ids.length ? 'Choose a chat model from your provider.' : 'The provider’s model list is unavailable. Enter its model ID.';
+            chooseModel = true;
+            return;
+          }
+          [modelId] = ids;
+        }
+        AI.setBrowserProvider(endpoint.value, token.value, modelId);
+        token.value = '';
+        endpoint.value = AI.browserSettings().endpoint;
+        model.value = modelId;
+        model.required = true;
+        modelField.hidden = false;
+        connect.textContent = 'Save connection';
+        disconnect.hidden = false;
+        status.textContent = savedMessage;
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        controls.forEach((control) => { control.disabled = false; });
+        if (chooseModel) model.focus();
+      }
+    });
+    body.replaceChildren(status, form, h('div', { class: 'row' },
+      hasServer ? button('Use local coach server', () => {
+        AI.clearBrowserProvider();
+        openCoachSettings();
+      }) : null,
+      button('Back to Settings', openSettings)));
   }
 
   function exportData() {

@@ -3,7 +3,7 @@ const { once } = require('node:events');
 const { createServer } = require('node:http');
 const test = require('node:test');
 const { configureCoach, createAppServer } = require('../server.cjs');
-const { selectPractice } = require('../coach-lessons.cjs');
+const { selectPractice } = require('../js/coach-core.js');
 require('../js/ai-coach.js');
 
 const { AICoach: AI } = globalThis;
@@ -81,7 +81,51 @@ test('the browser sends only metrics to the same-origin route', async (t) => {
   }));
   assert.deepEqual(await AI.review(metrics, controller.signal), { advice: 'Review the PLL pause.', lesson: null });
   fetch.mock.mockImplementationOnce(async () => new Response('', { status: 501 }));
-  await assert.rejects(AI.review(metrics, controller.signal), /requires the local coach server/);
+  await assert.rejects(AI.review(metrics, controller.signal), /connect to a provider/);
+});
+
+test('direct browser coaching discovers models and sends only selected metrics to the configured provider', async (t) => {
+  t.after(() => AI.clearBrowserProvider());
+  const endpoint = 'https://provider.example/custom/v1';
+  const token = 'browser-test-token';
+  const signal = new AbortController().signal;
+  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, endpoint + '/models');
+    assert.deepEqual(options.headers, { Authorization: 'Bearer ' + token });
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.redirect, 'error');
+    return Response.json({ data: [{ id: 'chat-b' }, { id: 'chat-a' }, { id: 'chat-a' }, null] });
+  });
+  assert.deepEqual(await AI.providerModels(endpoint, token), ['chat-a', 'chat-b']);
+  fetch.mock.mockImplementationOnce(async () => new Response('', { status: 404 }));
+  assert.deepEqual(await AI.providerModels(endpoint, token), []);
+
+  AI.setBrowserProvider(endpoint, token, 'chat-a');
+  assert.deepEqual(AI.browserSettings(), { endpoint: endpoint + '/chat/completions', model: 'chat-a' });
+  fetch.mock.mockImplementationOnce(async (url, options) => {
+    assert.equal(url, endpoint + '/chat/completions');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.signal, signal);
+    assert.deepEqual(options.headers, { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token });
+    const { model, messages } = JSON.parse(options.body);
+    assert.equal(model, 'chat-a');
+    assert.match(messages[0].content, /CubeSkills lesson topic: Practicing/);
+    assert.deepEqual(JSON.parse(messages[1].content), {
+      scope: 'selected solves', detail: 'times', solves: [{ timeMs: 1250 }],
+    });
+    return Response.json({ choices: [{ message: { content: ' Practice a steady pace. ' } }] });
+  });
+  const response = await AI.review({
+    scope: 'selected solves', detail: 'times',
+    solves: [{ timeMs: 1250, phases: metrics.phases }],
+  }, signal);
+  assert.equal(response.advice, 'Practice a steady pace.');
+  assert.equal(response.lesson.title, 'Practicing');
+  fetch.mock.mockImplementationOnce(async () => { throw new TypeError('fetch failed'); });
+  await assert.rejects(AI.review(metrics, signal), /browser access \(CORS\)/);
+  AI.clearBrowserProvider();
+  assert.equal(AI.browserSettings(), null);
 });
 
 test('the relay keeps the provider token server-side and rejects cross-origin requests', async (t) => {
