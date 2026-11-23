@@ -1143,6 +1143,8 @@
 
   modal.addEventListener('close', () => {
     if (!modal.open) coachRequest?.abort();
+    const providerToken = $('#coach-provider-token');
+    if (providerToken) providerToken.value = '';
     window.Charts.hideTip();
     if (currentView === 'timer') document.activeElement && document.activeElement.blur();
     const attempt = smart.attempt;
@@ -1819,6 +1821,8 @@
           ...sel('Color scheme', 'theme', [['auto', 'Match system (Basic / Pro)'], ...SCHEMES], applyTheme),
           ...sel('Scramble preview', 'preview', [[true, 'Show'], [false, 'Hide']], renderScramble)
         ),
+        h('div', { class: 'settings-section' }, 'Coaching'),
+        button('AI coach', openCoachSettings),
         h('div', { class: 'settings-section' }, 'Data'),
         h(
           'div',
@@ -1844,6 +1848,73 @@
           'Space: start/stop · Esc: cancel · M: start/stop metronome · Alt+1 / Alt+2 / Alt+3: OK / +2 / DNF on last solve · Alt+Z: delete last solve · ←/→ on the progress chart to step through solves.'
         )
       );
+    });
+  }
+
+  function openCoachSettings() {
+    openModal('AI coach settings', (body) => {
+      const status = h('p', { class: 'muted small', role: 'status' }, 'Checking the coach server…');
+      const localHelp = h('p', { class: 'small', hidden: true }, 'Start Cube Timer with ',
+        h('code', null, 'node server.cjs'), ', then open ',
+        h('a', { href: 'http://localhost:8080/' }, 'Cube Timer on localhost'), ' to configure your provider.');
+      const endpoint = h('input', {
+        type: 'url', required: true, placeholder: 'https://api.example.com/v1', autocapitalize: 'off', spellcheck: 'false',
+      });
+      const model = h('input', { type: 'text', required: true, autocapitalize: 'off', spellcheck: 'false' });
+      const token = h('input', { id: 'coach-provider-token', type: 'password', autocomplete: 'new-password' });
+      const clear = button('Clear saved settings', () => updateSettings('DELETE'), 'btn', { hidden: true });
+      const saveSettings = h('button', { type: 'submit', class: 'btn primary' }, 'Save settings');
+      const form = h('form', { class: 'coach-settings', autocomplete: 'off', hidden: true },
+        h('label', { class: 'field' }, 'Provider URL', endpoint),
+        h('label', { class: 'field' }, 'Model ID', model),
+        h('label', { class: 'field' }, 'API token', token),
+        h('p', { class: 'muted small' }, 'Use an OpenAI-compatible Chat Completions endpoint. A local provider can leave the token blank. The coach server keeps these settings in memory until it restarts.'),
+        h('div', { class: 'row' }, saveSettings, clear));
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        updateSettings('PUT', { endpoint: endpoint.value, model: model.value, token: token.value });
+      });
+      body.append(status, localHelp, form, button('Back to Settings', openSettings));
+
+      function displaySettings(settings, saved = false) {
+        form.hidden = !settings;
+        localHelp.hidden = !!settings;
+        if (!settings) {
+          status.textContent = 'Provider settings require the local Cube Timer server.';
+          return;
+        }
+        endpoint.value = settings.endpoint;
+        model.value = settings.model;
+        token.value = '';
+        clear.hidden = settings.source !== 'web';
+        status.textContent = saved ? 'Provider settings saved.'
+          : settings.source === 'web' ? 'Using settings saved for this server run.'
+          : settings.source === 'environment' ? 'Using the provider configured in the server environment.'
+          : 'Choose a provider to enable AI advice.';
+      }
+
+      async function updateSettings(method, values) {
+        if (saveSettings.disabled) return;
+        const controls = [endpoint, model, token, saveSettings, clear];
+        controls.forEach((control) => { control.disabled = true; });
+        status.textContent = method === 'PUT' ? 'Saving provider settings…' : 'Clearing provider settings…';
+        try {
+          const settings = await AI.providerSettings(method, values);
+          if (form.isConnected && modal.open) displaySettings(settings, method === 'PUT');
+        } catch (error) {
+          status.textContent = error.message;
+        } finally {
+          controls.forEach((control) => { control.disabled = false; });
+        }
+      }
+
+      (location.protocol === 'file:' ? Promise.resolve(null) : AI.providerSettings())
+        .then((settings) => {
+          if (form.isConnected && modal.open) displaySettings(settings);
+        })
+        .catch(() => {
+          status.textContent = 'Could not reach the coach server. Reopen these settings to retry.';
+        });
     });
   }
 

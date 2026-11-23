@@ -181,3 +181,44 @@ test('bulk reviews forward only the chosen data, with room for 50 detailed solve
   assert.equal((await send('times', [])).status, 400);
   assert.equal(calls.length, 3);
 });
+
+test('web provider settings are same-origin, keep tokens server-side, and restore environment defaults', async (t) => {
+  const calls = [];
+  const provider = await listen(createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const { model } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    calls.push({ model, authorization: request.headers.authorization });
+    response.end(JSON.stringify({ choices: [{ message: { content: 'Practice steady turns.' } }] }));
+  }), t);
+  const app = await listen(createAppServer(configureCoach(provider, 'environment-token', 'environment-model')), t);
+  const settingsUrl = app + '/api/coach/settings';
+  const write = (method, origin, body) => fetch(settingsUrl, {
+    method, headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const requestAdvice = () => fetch(app + '/api/coach', {
+    method: 'POST', headers: { Origin: app, 'Content-Type': 'application/json' }, body: JSON.stringify(metrics),
+  });
+
+  const defaults = { source: 'environment', endpoint: '', model: '' };
+  assert.deepEqual(await (await fetch(settingsUrl)).json(), defaults);
+  const config = { endpoint: provider + '/v1', model: 'web-model', token: 'web-token' };
+  assert.equal((await write('PUT', 'https://other.example', config)).status, 403);
+
+  const save = await write('PUT', app, config);
+  assert.equal(save.status, 200);
+  assert.equal(save.headers.get('cache-control'), 'no-store');
+  const saved = { source: 'web', endpoint: config.endpoint + '/chat/completions', model: config.model };
+  assert.deepEqual(await save.json(), saved);
+  assert.deepEqual(await (await fetch(settingsUrl)).json(), saved);
+  assert.equal((await write('PUT', app, { ...config, model: '' })).status, 400);
+  assert.equal((await write('DELETE', 'https://other.example')).status, 403);
+
+  assert.equal((await requestAdvice()).status, 200);
+  assert.deepEqual(await (await write('DELETE', app)).json(), defaults);
+  assert.equal((await requestAdvice()).status, 200);
+  assert.deepEqual(calls, [
+    { model: 'web-model', authorization: 'Bearer web-token' },
+    { model: 'environment-model', authorization: 'Bearer environment-token' },
+  ]);
+});

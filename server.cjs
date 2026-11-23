@@ -8,6 +8,7 @@ const { prepareBulkReview } = require('./coach-batch.cjs');
 
 const MAX_METRICS_BYTES = 16 * 1024;
 const MAX_BULK_METRICS_BYTES = 32 * 1024;
+const MAX_SETTINGS_BYTES = 16 * 1024;
 const COACH_PROMPT = [
   'You are a speedcubing practice coach. Use only the supplied solve or session metrics as evidence. Times are milliseconds.',
   'Use the selected CubeSkills lesson topic and practice idea to suggest two specific drills or measurable goals.',
@@ -34,7 +35,7 @@ function configureCoach(url, token, model) {
   try {
     endpoint = new URL(url.trim());
   } catch {
-    throw new Error('Set CUBETIMER_COACH_API_URL to a complete API URL.');
+    throw new Error('Enter a complete provider URL.');
   }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
   if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && loopback)) {
@@ -46,9 +47,9 @@ function configureCoach(url, token, model) {
   const path = endpoint.pathname.replace(/\/+$/, '');
   endpoint.pathname = path.endsWith('/chat/completions') ? path : (path || '/v1') + '/chat/completions';
   if ((!loopback && !token.trim()) || /[^\x21-\x7e]/.test(token.trim())) {
-    throw new Error('Set CUBETIMER_COACH_API_TOKEN to a valid provider token.');
+    throw new Error('Enter a valid provider API token. Loopback providers can use a blank token.');
   }
-  if (!model.trim()) throw new Error('Set CUBETIMER_COACH_MODEL to your provider model ID.');
+  if (!model.trim()) throw new Error('Enter the provider model ID.');
   return { endpoint: endpoint.href, token: token.trim(), model: model.trim() };
 }
 
@@ -57,35 +58,41 @@ function json(response, status, data) {
   response.end(JSON.stringify(data));
 }
 
+const isSameOrigin = (request) => request.headers.origin === `http://${request.headers.host}`;
+
+async function readJsonBody(request, response, maxBytes, description) {
+  if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
+    return json(response, 415, { error: `${description} must be JSON.` });
+  }
+  const chunks = [];
+  let size = 0;
+  try {
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+      size += chunk.length;
+      if (size > maxBytes) {
+        request.resume();
+        return json(response, 413, { error: 'The request is too large.' });
+      }
+      chunks.push(chunk);
+    }
+    return { value: JSON.parse(Buffer.concat(chunks).toString('utf8')), size };
+  } catch {
+    if (!response.destroyed) json(response, 400, { error: `Could not read ${description.toLowerCase()}.` });
+  }
+}
+
 async function coachRequest(request, response, config) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     return json(response, 405, { error: 'Use POST to request coaching.' });
   }
-  if (request.headers.origin !== `http://${request.headers.host}`) {
+  if (!isSameOrigin(request)) {
     return json(response, 403, { error: 'Open Cube Timer on the same address as the coach server.' });
   }
-  if (!config) return json(response, 503, { error: 'The AI coach is disabled. Set the provider environment variables and restart the server.' });
-  if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
-    return json(response, 415, { error: 'Coaching metrics must be JSON.' });
-  }
-  const chunks = [];
-  let size = 0;
-  let metrics;
-  try {
-    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
-      size += chunk.length;
-      if (size > MAX_BULK_METRICS_BYTES) {
-        request.resume();
-        return json(response, 413, { error: 'The coaching request is too large.' });
-      }
-      chunks.push(chunk);
-    }
-    metrics = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    if (!response.destroyed) json(response, 400, { error: 'Could not read the coaching metrics.' });
-    return;
-  }
+  if (!config) return json(response, 503, { error: 'Open Settings → AI coach to configure a provider.' });
+  const body = await readJsonBody(request, response, MAX_BULK_METRICS_BYTES, 'Coaching metrics');
+  if (!body) return;
+  let metrics = body.value;
   const bulkReview = metrics?.scope === 'selected solves';
   let practiceMetrics = metrics;
   if (bulkReview) {
@@ -94,7 +101,7 @@ async function coachRequest(request, response, config) {
     metrics = bulk.metrics;
     practiceMetrics = { scope: 'filtered session history', phases: bulk.phases };
   } else {
-    if (size > MAX_METRICS_BYTES) return json(response, 413, { error: 'The coaching request is too large.' });
+    if (body.size > MAX_METRICS_BYTES) return json(response, 413, { error: 'The coaching request is too large.' });
     if (!['single solve', 'filtered session history'].includes(metrics?.scope)) {
       return json(response, 400, { error: 'Choose a recorded solve or a session range for advice.' });
     }
@@ -143,13 +150,49 @@ async function coachRequest(request, response, config) {
 }
 
 function createAppServer(coach = null) {
+  let sessionCoach = null;
+  const settingsState = () => ({
+    source: sessionCoach ? 'web' : coach ? 'environment' : 'none',
+    endpoint: sessionCoach?.endpoint ?? '',
+    model: sessionCoach?.model ?? '',
+  });
+
+  async function coachSettings(request, response) {
+    if (request.method === 'GET') return json(response, 200, settingsState());
+    if (!['PUT', 'DELETE'].includes(request.method)) {
+      response.setHeader('Allow', 'GET, PUT, DELETE');
+      return json(response, 405, { error: 'Use GET, PUT, or DELETE for provider settings.' });
+    }
+    if (!isSameOrigin(request)) {
+      return json(response, 403, { error: 'Open Cube Timer on the same address as the coach server.' });
+    }
+    if (request.method === 'DELETE') {
+      sessionCoach = null;
+      return json(response, 200, settingsState());
+    }
+
+    const body = await readJsonBody(request, response, MAX_SETTINGS_BYTES, 'Provider settings');
+    if (!body) return;
+    const { endpoint, model, token = '' } = body.value ?? {};
+    if (typeof endpoint !== 'string' || typeof model !== 'string' || typeof token !== 'string') {
+      return json(response, 400, { error: 'Enter a provider URL, model ID, and API token when required.' });
+    }
+    try {
+      sessionCoach = configureCoach(endpoint, token, model);
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
+    return json(response, 200, settingsState());
+  }
+
   return createServer(async (request, response) => {
     const port = request.socket.localPort;
     if (![`localhost:${port}`, `127.0.0.1:${port}`].includes(request.headers.host)) {
       return json(response, 403, { error: 'Use a loopback address to open Cube Timer.' });
     }
     const path = request.url.split('?')[0];
-    if (path === '/api/coach') return coachRequest(request, response, coach);
+    if (path === '/api/coach') return coachRequest(request, response, sessionCoach ?? coach);
+    if (path === '/api/coach/settings') return coachSettings(request, response);
 
     const file = path === '/' || path === '/index.html' ? 'index.html'
       : /^\/(?:js\/[\w.-]+\.js|css\/[\w.-]+\.css|fonts\/[\w.-]+\.woff2)$/.test(path) ? path.slice(1) : null;
