@@ -136,57 +136,65 @@
         <div class="quick-avgs" id="quick-avgs"></div>
       </div>
 
-      <section class="metronome" id="metronome" aria-label="Metronome" hidden>
-        <div class="metro-head">
-          <span class="metro-title">Metronome</span>
-          <span class="metro-rate" id="metro-rate"></span>
-          <div class="metro-dots" id="metro-dots" aria-hidden="true"></div>
-          <button class="icon-btn ghost metro-close" id="metro-close" title="Hide panel (keeps playing)" aria-label="Hide metronome panel">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-          </button>
-        </div>
-        <div class="metro-main">
-          <button class="metro-play" id="metro-play" aria-pressed="false" aria-label="Start metronome" title="Start / stop (M)">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="i-play"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="i-stop"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>
-          </button>
-          <button class="metro-step" data-step="-1" aria-label="Slower">−</button>
-          <label class="metro-bpm">
-            <input id="metro-bpm-input" type="number" min="30" max="300" inputmode="numeric" aria-label="Beats per minute">
-            <span class="metro-unit">BPM</span>
-          </label>
-          <button class="metro-step" data-step="1" aria-label="Faster">+</button>
-          <button class="chip metro-tap" id="metro-tap" title="Tap repeatedly to set the tempo">Tap</button>
-        </div>
-        <input type="range" id="metro-bpm-range" class="metro-range" min="30" max="300" step="1" aria-label="Tempo">
-        <details class="metro-more" id="metro-more">
-          <summary>Options</summary>
-          <div class="metro-options">
-            <label for="metro-beats">Accent</label>
-            <select id="metro-beats">
-              <option value="1">None</option>
-              <option value="2">Every 2 beats</option>
-              <option value="3">Every 3 beats</option>
-              <option value="4">Every 4 beats</option>
-              <option value="6">Every 6 beats</option>
-            </select>
-            <label for="metro-sound">Sound</label>
-            <select id="metro-sound">
-              <option value="click">Click</option>
-              <option value="beep">Beep</option>
-              <option value="wood">Wood block</option>
-            </select>
-            <label for="metro-volume">Volume</label>
-            <input type="range" id="metro-volume" class="metro-range" min="0" max="100" step="1">
-            <label class="metro-check" for="metro-auto"><input type="checkbox" id="metro-auto"> Auto-play during solves only</label>
+      <div class="stage-tools">
+        <section class="metronome" id="metronome" aria-label="Metronome" hidden>
+          <div class="metro-head">
+            <span class="metro-title">Metronome</span>
+            <span class="metro-rate" id="metro-rate"></span>
+            <div class="metro-dots" id="metro-dots" aria-hidden="true"></div>
+            <button class="icon-btn ghost metro-close" id="metro-close" title="Hide panel (keeps playing)" aria-label="Hide metronome panel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
           </div>
-        </details>
-      </section>
+          <div class="metro-main">
+            <button class="metro-play" id="metro-play" aria-pressed="false" aria-label="Start metronome" title="Start / stop (M)">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="i-play"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="i-stop"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>
+            </button>
+            <button class="metro-step" data-step="-1" aria-label="Slower">−</button>
+            <label class="metro-bpm">
+              <input id="metro-bpm-input" type="number" min="30" max="300" inputmode="numeric" aria-label="Beats per minute">
+              <span class="metro-unit">BPM</span>
+            </label>
+            <button class="metro-step" data-step="1" aria-label="Faster">+</button>
+            <button class="chip metro-tap" id="metro-tap" title="Tap repeatedly to set the tempo">Tap</button>
+          </div>
+          <input type="range" id="metro-bpm-range" class="metro-range" min="30" max="300" step="1" aria-label="Tempo">
+          <details class="metro-more" id="metro-more">
+            <summary>Options</summary>
+            <div class="metro-options">
+              <label for="metro-beats">Accent</label>
+              <select id="metro-beats">
+                <option value="1">None</option>
+                <option value="2">Every 2 beats</option>
+                <option value="3">Every 3 beats</option>
+                <option value="4">Every 4 beats</option>
+                <option value="6">Every 6 beats</option>
+              </select>
+              <label for="metro-sound">Sound</label>
+              <select id="metro-sound">
+                <option value="click">Click</option>
+                <option value="beep">Beep</option>
+                <option value="wood">Wood block</option>
+              </select>
+              <label for="metro-volume">Volume</label>
+              <input type="range" id="metro-volume" class="metro-range" min="0" max="100" step="1">
+              <label class="metro-check" for="metro-auto"><input type="checkbox" id="metro-auto"> Auto-play during solves only</label>
+            </div>
+          </details>
+        </section>
 
-      <div class="preview" id="preview" aria-label="Scramble preview"></div>
-      <div class="live-cube" id="live-cube" hidden>
-        <span class="muted small">Live cube</span>
-        <div id="live-cube-net"></div>
+        <div class="stage-previews">
+          <div class="live-cube" id="live-cube" hidden>
+            <div class="live-cube-view" id="live-cube-view" tabindex="0" role="group" aria-label="Live smart cube" aria-describedby="live-cube-help" title="Drag to rotate"></div>
+            <span class="sr-only" id="live-cube-help">Drag or use the arrow keys to rotate the view. Press Home to reset it.</span>
+            <div class="live-cube-caption muted small">
+              <span aria-hidden="true">Live cube</span>
+              <button class="link-btn live-cube-reset" id="live-cube-reset" type="button" aria-label="Reset cube view" title="Reset cube view">↺</button>
+            </div>
+          </div>
+          <div class="preview" id="preview" aria-label="Scramble preview"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -316,6 +324,7 @@
   <script src="js/charts.js"></script>
   <script src="js/metronome.js"></script>
   <script src="js/smart-cube.js"></script>
+  <script src="js/cube-view.js"></script>
   <script src="js/smart-analysis.js"></script>
   <script src="js/coach-core.js"></script>
   <script src="js/ai-coach.js"></script>

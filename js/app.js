@@ -237,6 +237,9 @@
     }
     container.hidden = false;
     renderCubeNet(container, p.cube, window.Scramble.cubeNet(p.cube, scramble), 'Scramble state. White top, green front.');
+    if (container.id === 'preview') {
+      container.append(h('div', { class: 'target-label muted small', 'aria-hidden': 'true' }, 'Target scramble'));
+    }
   }
 
   function renderCubeNet(container, n, stickers, label) {
@@ -541,6 +544,7 @@
   /* ================= Smart cube ================= */
 
   const smart = { cube: null, attempt: null, closing: false, guide: null, undo: [], recording: null, inspected: null };
+  let liveCubeView;
   const smartEligible = () => settings().input === 'timer' && ['333', '333oh'].includes(session().puzzle);
   const smartTiming = () => smart.cube && smartEligible();
 
@@ -587,9 +591,13 @@
 
   function renderLiveCube() {
     const cube = smart.cube;
+    const facelets = smartTiming() ? cube.facelets : null;
     const live = $('#live-cube');
-    live.hidden = !smartTiming() || !cube.facelets;
-    if (!live.hidden) renderCubeNet($('#live-cube-net'), 3, window.Scramble.modelNet(cube.model), 'Current cube state');
+    live.hidden = !facelets;
+    if (facelets && !liveCubeView) {
+      liveCubeView = new window.CubeView($('#live-cube-view'), STICKER, $('#live-cube-reset'));
+    }
+    if (liveCubeView && liveCubeView.facelets !== facelets) liveCubeView.setState(facelets);
     const guide = $('#scramble-guide');
     guide.hidden = live.hidden || !smart.guide || T.state !== 'idle';
     if (guide.hidden) return;
@@ -692,6 +700,7 @@
     }
 
     $('#smart-cube-move').textContent = `Last turn ${event.move}`;
+    if (liveCubeView?.facelets === event.previous) liveCubeView.turn(event.move, smart.cube.facelets);
     if (!smart.guide) return renderLiveCube();
     const { facelets } = smart.cube;
     if (smart.guide.prefixes.has(facelets)) smart.undo = [];

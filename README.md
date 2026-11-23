@@ -54,7 +54,9 @@ In **Settings → Input method**, select **Type times in**. Enter a result and p
 2. Close CubeStation and other apps using the cube. Rotate the white face to wake the iCarry 4. [GAN iCarry 4 manual and product page](https://www.gancube.com/products/gan-i-carry-4-smart-cube)
 3. Select a **3x3** or **3x3 One-Handed** session. In **Settings → Input method**, select **Timer (Space / touch)**.
 4. Select **Connect smart cube → Choose cube**, then select the GAN device and click **Pair** in the browser’s picker. If the browser cannot read the address, enter the cube’s six-byte Bluetooth address and select **Continue pairing**. Cube Timer remembers the address in this browser after it reads the cube successfully. [Find your GAN cube’s Bluetooth address](https://gist.github.com/afedotov/52057533a8b27a0277598160c384ae71)
-5. Wait for the cube name and **Live cube** sticker net to appear. Open **Cube info** to read the battery and hardware details the cube reports. Use **Refresh device info** to request them again.
+5. Wait for the cube name and the **Live cube** 3D view to appear. Open **Cube info** to read the battery and hardware details the cube reports. Use **Refresh device info** to request them again.
+
+The live view animates layer turns as you scramble and solve. Drag or swipe to see other sides. With the view focused, use the arrow keys to rotate. Press **Home** or select **Reset cube view** to return to white on top and green in front.
 
 The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-web-bluetooth), loaded from jsDelivr. The driver detects GAN Gen2, Gen3, and Gen4 Bluetooth services. Software checks used simulated GAN notifications. Physical pairing with an iCarry 4 is still unverified.
 
@@ -67,7 +69,7 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 
 If the physical cube is solved and the live preview shows a different state, open **Cube info → Set cube as solved**. Keep the cube still while it confirms the reset. The scramble guide restarts at the beginning of the current scramble.
 
-The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The live net and replay show sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
+The timer prefers cube timestamps. It estimates clock drift from multiple turns and uses a median slope to reduce the effect of delayed Bluetooth notifications. It uses browser timing when needed and marks interpolated timestamps in the replay. The iCarry 4 has a replaceable battery and lacks a gyroscope. The replay shows sticker states in a fixed orientation. [iCarry 4 hardware details](https://acubemy.com/blog/gan-icarry-4-review)
 
 | What you see | What to try |
 | --- | --- |
