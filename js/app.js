@@ -1894,6 +1894,15 @@
   const BULK_REVIEW_LIMIT = 50;
   const hasBulkSplits = (solve) => !!solve.smart && solve.p !== S.PEN_DNF;
 
+  function bulkPhaseMetrics(phase, moves) {
+    const metrics = coachPhaseTiming(phase);
+    if (phase.label === 'OLL' || phase.label === 'PLL') {
+      if (phase.case) metrics.case = phase.case.name;
+      metrics.algorithm = moves.slice(phase.start, phase.end).map(([move]) => move).join(' ');
+    }
+    return metrics;
+  }
+
   function openBulkReview(solves, offset, state = { selected: new Set(), page: 0, detail: 'times' }) {
     const { selected } = state;
     const latestCount = Math.min(BULK_REVIEW_LIMIT, solves.length);
@@ -1925,12 +1934,13 @@
           const solve = solves[index];
           const item = { timeMs: solve.p === S.PEN_DNF ? null : S.effective(solve) };
           if (includeSplits && hasBulkSplits(solve)) {
-            item.phases = analyzeSolve(solve).phases.filter((phase) => phase.turns).map(coachPhaseTiming);
+            item.phases = analyzeSolve(solve).phases.filter((phase) => phase.turns)
+              .map((phase) => bulkPhaseMetrics(phase, solve.smart.moves));
           }
           return item;
         });
         const withSplits = results.filter((solve) => solve.phases?.length).length;
-        const mode = includeSplits ? `CFOP timings for ${withSplits} of ${results.length}` : 'Solve times only';
+        const mode = includeSplits ? `CFOP details for ${withSplits} of ${results.length}` : 'Solve times only';
         const metrics = { scope: 'selected solves', detail: state.detail, solves: results };
         const summary = h('p', { tabindex: '-1' }, `${results.length} selected · ${mode}`);
         openModal('Bulk AI review', (confirmation) => {
@@ -1938,7 +1948,7 @@
             summary,
             button('Edit selection', () => openBulkReview(solves, offset, state)),
             renderCoach(metrics, includeSplits
-              ? 'Sends the selected solve times and available CFOP timings to the configured AI provider.'
+              ? 'Sends the selected solve times, available CFOP timings, and recorded OLL and PLL moves with detected case names to the configured AI provider.'
               : 'Sends only the selected solve times and DNF results to the configured AI provider.'));
         });
         summary.focus();
@@ -1977,7 +1987,7 @@
       }
 
       const modes = h('fieldset', { class: 'bulk-review-modes' }, h('legend', null, 'Data to share'),
-        [['times', 'Solve times only'], ['cfop', 'Solve times and detailed CFOP timings']].map(([value, label]) =>
+        [['times', 'Solve times only'], ['cfop', 'Solve times, CFOP timings, and OLL and PLL algorithms']].map(([value, label]) =>
           h('label', null, h('input', {
             type: 'radio', name: 'bulk-ai-detail', value, checked: state.detail === value,
             onchange: () => { state.detail = value; },
@@ -2201,14 +2211,16 @@
 
   function renderBrowserCoachSettings(body, hasServer) {
     const current = AI.browserSettings();
-    const savedMessage = 'Browser connection saved for this tab.';
+    const savedMessage = (settings) => settings.persistent ? 'Connection saved in this browser.'
+      : 'Connection active in this tab. This browser could not save it for reloads.';
     const status = h('p', { class: 'muted small', role: 'status' }, current
-      ? savedMessage : 'Connect directly to an OpenAI-compatible provider.');
+      ? savedMessage(current) : 'Connect directly to an OpenAI-compatible provider.');
     const endpoint = h('input', {
       type: 'url', required: true, value: current?.endpoint, placeholder: 'https://api.example.com/v1',
       autocapitalize: 'off', spellcheck: 'false',
     });
-    const token = h('input', { id: 'coach-provider-token', type: 'password', autocomplete: 'new-password' });
+    const token = h('input', { id: 'coach-provider-token', type: 'password', autocomplete: 'new-password',
+      placeholder: current ? 'Leave blank to keep the saved token for this URL' : null });
     const models = h('datalist', { id: 'coach-provider-models' });
     const model = h('input', {
       type: 'text', value: current?.model, required: !!current, list: 'coach-provider-models',
@@ -2224,10 +2236,11 @@
       h('label', { class: 'field' }, 'Provider URL', endpoint),
       h('label', { class: 'field' }, 'API token', token),
       modelField, models,
-      h('p', { class: 'muted small' }, 'Use a token intended for browser use. It stays in this tab until reload and is sent to the provider URL you enter.'),
+      h('p', { class: 'muted small' }, 'Use a token intended for browser use. This browser saves the connection and sends the token to the provider URL you enter. Disconnect browser clears the saved connection.'),
       h('div', { class: 'row' }, connect, disconnect));
 
     endpoint.addEventListener('input', () => {
+      token.placeholder = '';
       model.value = '';
       model.required = false;
       modelField.hidden = true;
@@ -2258,14 +2271,16 @@
           [modelId] = ids;
         }
         AI.setBrowserProvider(endpoint.value, token.value, modelId);
+        const saved = AI.browserSettings();
         token.value = '';
-        endpoint.value = AI.browserSettings().endpoint;
+        token.placeholder = 'Leave blank to keep the saved token for this URL';
+        endpoint.value = saved.endpoint;
         model.value = modelId;
         model.required = true;
         modelField.hidden = false;
         connect.textContent = 'Save connection';
         disconnect.hidden = false;
-        status.textContent = savedMessage;
+        status.textContent = savedMessage(saved);
       } catch (error) {
         status.textContent = error.message;
       } finally {
@@ -2349,6 +2364,7 @@
     range: 'all',
     bin: 'auto',
     visible: { single: true, ao5: true, ao12: true, ao100: false },
+    caseSort: {},
   };
   let histChart = null;
 
@@ -2439,21 +2455,55 @@
       h('h3', null, 'OLL and PLL case statistics'),
       h('p', { class: 'muted small' }, 'Diagrams show the recommended setup with white on top and green in front.'),
       ['OLL', 'PLL'].map((type) => {
-        const catalog = Smart.caseCatalog(type);
-        let seen = 0;
-        const rows = catalog.map((entry) => {
-          const reference = caseReference(type, entry);
-          const group = cases.get(`${type}:${entry.key}`);
-          if (!group) return [reference, 0, '–', '–', '–', '–', '–'];
-          if (!entry.skip) seen++;
-          return [reference, group.count, group.averageTurns.toFixed(1), seconds(group.averageMs), seconds(group.best),
-            seconds(group.averagePauseMs), seconds(group.averageExecutionMs)];
-        });
+        const entries = Smart.caseCatalog(type).map((entry) => ({ entry, group: cases.get(`${type}:${entry.key}`) }));
+        const seen = entries.filter(({ entry, group }) => group && !entry.skip).length;
         return h('details', { class: 'case-catalog', 'data-case-type': type, open: expanded.has(type) },
-          h('summary', null, `${type} cases · ${seen}/${catalog.length - 1} seen`),
+          h('summary', null, `${type} cases · ${seen}/${entries.length - 1} seen`),
           h('div', { class: 'table-scroll case-table-scroll', tabindex: 0, 'aria-label': `${type} case table` },
-            phaseTable(rows, ['Case', 'Solves', 'Avg turns', 'Avg time', 'Best', 'Avg pause', 'Avg execution'])));
+            caseHistoryTable(type, entries)));
       }));
+  }
+
+  function caseHistoryTable(type, entries) {
+    const columns = [
+      ['Case'], ['Solves', 'count'], ['Avg turns'], ['Avg time', 'averageMs'],
+      ['Best'], ['Avg pause'], ['Avg execution', 'averageExecutionMs'],
+    ];
+    const rows = entries.map(({ entry, group }) => {
+      const reference = caseReference(type, entry);
+      if (!group) return [reference, 0, '–', '–', '–', '–', '–'];
+      return [reference, group.count, group.averageTurns.toFixed(1), seconds(group.averageMs), seconds(group.best),
+        seconds(group.averagePauseMs), seconds(group.averageExecutionMs)];
+    });
+    const table = phaseTable(rows, columns.map(([label, key]) => key ? button([
+      label, h('span', { class: 'case-sort-icon', 'aria-hidden': 'true' }),
+    ], () => {
+      const sort = hist.caseSort[type];
+      hist.caseSort[type] = { key, direction: sort?.key === key ? -sort.direction : -1 };
+      applySort();
+      table.parentElement.scrollTop = 0;
+    }, 'case-sort') : label));
+    const body = table.tBodies[0];
+    const rowNodes = [...body.rows];
+
+    function applySort() {
+      const { key, direction } = hist.caseSort[type];
+      const sorted = entries.map(({ group }, i) => ({
+        row: rowNodes[i], value: key === 'count' ? group?.count ?? 0 : group?.[key],
+      }));
+      sorted.sort(({ value: a }, { value: b }) => {
+        if (a == null || b == null) return Number(a == null) - Number(b == null);
+        return direction * (a - b);
+      });
+      body.append(...sorted.map(({ row }) => row));
+
+      table.querySelector('th[aria-sort]')?.removeAttribute('aria-sort');
+      const index = columns.findIndex(([, field]) => field === key);
+      table.tHead.rows[0].cells[index].setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending');
+    }
+
+    if (hist.caseSort[type]) applySort();
+    return table;
   }
 
   function trainingFocus(solves, cases) {

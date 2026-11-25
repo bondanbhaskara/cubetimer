@@ -15,9 +15,12 @@
     'A null time is a DNF. Numeric solve times include any +2 penalties.',
     'With solve times only, discuss observable consistency or changes in the selected results without inferring phase timings or causes.',
     'When CFOP splits are present, use only the solves with splits for phase comparisons and mention limited coverage when relevant.',
+    'When OLL or PLL algorithms are present, analyze the recorded face turns, including any alignment turns or corrections within the split. Use the inferred case name when available. The move notation records face turns only, and gives no direct evidence of grip, finger tricks, or cube rotations.',
   ].join(' ');
 
   const MAX_SOLVES = 50;
+  const MAX_RECORDED_MOVES = 2048;
+  const ALGORITHM = /^[URFDLB](?:2|')?(?: [URFDLB](?:2|')?)*$/;
   const CHAT_LIMITS = { messages: 8, user: 1500, assistant: 2500 };
   const PHASES = ['Cross', 'F2L', 'OLL', 'PLL'];
   const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -36,12 +39,26 @@
         if (!Array.isArray(solve.phases) || solve.phases.length > PHASES.length) return null;
         const phases = [];
         const seen = new Set();
+        let recordedMoves = 0;
         for (const split of solve.phases) {
-          const { phase, timeMs: duration, initialPauseMs, executionMs } = split || {};
+          const { phase, timeMs: duration, initialPauseMs, executionMs, case: caseName, algorithm } = split || {};
           if (!PHASES.includes(phase) || seen.has(phase) || !isTime(duration) || duration > timeMs ||
               !isTime(initialPauseMs) || initialPauseMs > duration || executionMs !== duration - initialPauseMs) return null;
           seen.add(phase);
-          phases.push({ phase, timeMs: duration, initialPauseMs, executionMs });
+          const timing = { phase, timeMs: duration, initialPauseMs, executionMs };
+          if (phase === 'OLL' || phase === 'PLL') {
+            if (caseName != null) {
+              if (typeof caseName !== 'string' || !/^[A-Za-z0-9 /()-]{1,64}$/.test(caseName)) return null;
+              timing.case = caseName;
+            }
+            if (algorithm != null) {
+              if (typeof algorithm !== 'string' || algorithm.length > 3 * MAX_RECORDED_MOVES - 1 || !ALGORITHM.test(algorithm)) return null;
+              recordedMoves += algorithm.split(' ').length;
+              if (recordedMoves > MAX_RECORDED_MOVES) return null;
+              timing.algorithm = algorithm;
+            }
+          }
+          phases.push(timing);
           if (!totals.has(phase)) totals.set(phase, { count: 0, duration: 0, pause: 0 });
           const total = totals.get(phase);
           total.count++;

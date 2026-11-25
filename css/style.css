@@ -635,6 +635,12 @@ body.solving .stage { border-color: transparent; }
 .case-table-scroll { max-height: 34rem; overflow: auto; }
 .case-catalog .smart-phase-table { min-width: 610px; }
 .case-catalog .smart-phase-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.case-sort { border: 0; border-radius: 4px; background: none; padding: 0; font-weight: inherit; white-space: nowrap; }
+.case-sort:hover, th[aria-sort] .case-sort { color: var(--accent); }
+.case-sort-icon { display: inline-block; width: 1em; margin-inline-start: 3px; text-align: center; }
+.case-sort-icon::before { content: '↕'; }
+th[aria-sort="ascending"] .case-sort-icon::before { content: '↑'; }
+th[aria-sort="descending"] .case-sort-icon::before { content: '↓'; }
 .case-reference { display: flex; align-items: center; min-width: 170px; gap: 8px; }
 .case-reference code { display: block; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
 .case-diagram { display: block; flex: none; width: 54px; background: #252932; border-radius: 6px; }

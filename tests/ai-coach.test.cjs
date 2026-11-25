@@ -111,7 +111,9 @@ test('direct browser coaching discovers models and sends only selected metrics t
   assert.deepEqual(await AI.providerModels(endpoint, token), []);
 
   AI.setBrowserProvider(endpoint, token, 'chat-a');
-  assert.deepEqual(AI.browserSettings(), { endpoint: endpoint + '/chat/completions', model: 'chat-a' });
+  assert.deepEqual(AI.browserSettings(), { endpoint: endpoint + '/chat/completions', model: 'chat-a', persistent: false });
+  assert.throws(() => AI.setBrowserProvider('https://other.example/v1', '', 'chat-a'), /valid provider API token/);
+  AI.setBrowserProvider(endpoint, '', 'chat-a');
   fetch.mock.mockImplementationOnce(async (url, options) => {
     assert.equal(url, endpoint + '/chat/completions');
     assert.equal(options.credentials, 'omit');
@@ -221,7 +223,9 @@ test('bulk reviews forward only the chosen data, with room for 50 detailed solve
     phase, timeMs, initialPauseMs, executionMs: timeMs - initialPauseMs,
   });
   const phases = [
-    phase('Cross', 2400, 50), phase('F2L', 4500, 300), phase('OLL', 1500, 200), phase('PLL', 2000, 1200),
+    phase('Cross', 2400, 50), phase('F2L', 4500, 300),
+    { ...phase('OLL', 1500, 200), case: 'OLL 27 (Sune)', algorithm: "R U R' U R U2 R'" },
+    { ...phase('PLL', 2000, 1200), case: 'T-perm', algorithm: "R U R' U' R' F R2 U' R' U' R U R' F'" },
   ];
   const tracked = { timeMs: 12400, phases, scramble: 'Keep local' };
   const dnf = { timeMs: null };
@@ -235,21 +239,28 @@ test('bulk reviews forward only the chosen data, with room for 50 detailed solve
   });
   assert.match(calls[0][0].content, /chronological order/);
 
-  const selected = Array.from({ length: 50 }, (_, index) => ({ ...tracked, timeMs: tracked.timeMs + index }));
+  const longAlgorithm = Array(1024).fill('U2').join(' ');
+  const longPhases = phases.map((split) => split.algorithm ? { ...split, algorithm: longAlgorithm } : split);
+  const selected = Array.from({ length: 50 }, (_, index) => ({ ...tracked, phases: longPhases, timeMs: tracked.timeMs + index }));
   const detailed = await send('cfop', selected);
   assert.equal(detailed.status, 200);
   assert.deepEqual((await detailed.json()).lesson, pllLesson);
   assert.deepEqual(JSON.parse(calls[1][1].content), {
     scope: 'selected solves', detail: 'cfop',
-    solves: selected.map(({ timeMs }) => ({ timeMs, phases })),
+    solves: selected.map(({ timeMs, phases }) => ({ timeMs, phases })),
   });
   assert.match(calls[1][0].content, /PLL initial pause: 1200 ms of 2000 ms on average/);
+  assert.match(calls[1][0].content, /analyze the recorded face turns/);
 
   assert.equal((await send('cfop', [tracked, { ...dnf, phases }, manual])).status, 200);
   assert.deepEqual(JSON.parse(calls[2][1].content).solves, [{ timeMs: tracked.timeMs, phases }, dnf, manual]);
 
   assert.equal((await send('cfop', [...selected, tracked])).status, 400);
   assert.equal((await send('cfop', [{ ...tracked, phases: [phase('unknown', 100, 50)] }])).status, 400);
+  assert.equal((await send('cfop', [{ ...tracked, phases: [{ ...phases[3], algorithm: 'U hello' }] }])).status, 400);
+  assert.equal((await send('cfop', [{ ...tracked, phases: [...longPhases.slice(0, 3), {
+    ...longPhases[3], algorithm: longAlgorithm + ' U',
+  }] }])).status, 400);
   assert.equal((await send('times', [])).status, 400);
   assert.equal(calls.length, 3);
 });

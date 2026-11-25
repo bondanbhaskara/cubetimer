@@ -3,7 +3,46 @@
   'use strict';
 
   const Core = typeof module !== 'undefined' && module.exports ? require('./coach-core.js') : global.CoachCore;
-  let browserProvider = null;
+  const PROVIDER_COOKIE = 'cubetimer-coach';
+  const PROVIDER_STORAGE = 'cubetimer.coach.provider';
+  const COOKIE_AGE = 365 * 24 * 60 * 60;
+  const profile = ({ endpoint, model }) => ({ endpoint, model });
+  let browserProvider = restoreBrowserProvider();
+  let persistent = browserProvider !== null;
+
+  function profileCookie() {
+    const prefix = `${PROVIDER_COOKIE}=`;
+    return global.document.cookie.split(/;\s*/).find((cookie) => cookie.startsWith(prefix))?.slice(prefix.length);
+  }
+
+  function writeProfileCookie(value, maxAge) {
+    const secure = global.location.protocol === 'https:' ? '; Secure' : '';
+    global.document.cookie = `${PROVIDER_COOKIE}=${value}; Max-Age=${maxAge}; SameSite=Strict${secure}`;
+  }
+
+  function restoreBrowserProvider() {
+    try {
+      const saved = JSON.parse(global.localStorage.getItem(PROVIDER_STORAGE));
+      if (!saved) return null;
+      if (global.location.protocol !== 'file:' && profileCookie() !== encodeURIComponent(JSON.stringify(profile(saved)))) {
+        return null;
+      }
+      return Core.configureCoach(saved.endpoint, saved.token, saved.model);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearSavedBrowserProvider() {
+    try { global.localStorage.removeItem(PROVIDER_STORAGE); } catch { /* Storage may be blocked. */ }
+    try { writeProfileCookie('', 0); } catch { /* Cookies may be blocked. */ }
+  }
+
+  function tokenForEndpoint(endpoint, token) {
+    if (token.trim() || !browserProvider?.token) return token;
+    const candidate = Core.configureProvider(endpoint, browserProvider.token);
+    return candidate.endpoint === browserProvider.endpoint ? browserProvider.token : token;
+  }
 
   async function review(metrics, signal, conversation = []) {
     if (browserProvider) {
@@ -65,7 +104,7 @@
   }
 
   async function providerModels(endpoint, token) {
-    const provider = Core.configureProvider(endpoint, token);
+    const provider = Core.configureProvider(endpoint, tokenForEndpoint(endpoint, token));
     const url = new URL(provider.endpoint);
     url.pathname = url.pathname.replace(/\/chat\/completions$/, '/models');
     try {
@@ -89,16 +128,28 @@
 
   function browserSettings() {
     if (!browserProvider) return null;
-    const { endpoint, model } = browserProvider;
-    return { endpoint, model };
+    return { ...profile(browserProvider), persistent };
   }
 
   function setBrowserProvider(endpoint, token, model) {
-    browserProvider = Core.configureCoach(endpoint, token, model);
+    browserProvider = Core.configureCoach(endpoint, tokenForEndpoint(endpoint, token), model);
+    try {
+      global.localStorage.setItem(PROVIDER_STORAGE, JSON.stringify(browserProvider));
+      if (global.location.protocol !== 'file:') {
+        writeProfileCookie(encodeURIComponent(JSON.stringify(profile(browserProvider))), COOKIE_AGE);
+      }
+      const saved = restoreBrowserProvider();
+      persistent = saved?.endpoint === browserProvider.endpoint && saved.model === browserProvider.model && saved.token === browserProvider.token;
+    } catch {
+      persistent = false;
+    }
+    if (!persistent) clearSavedBrowserProvider();
   }
 
   function clearBrowserProvider() {
     browserProvider = null;
+    persistent = false;
+    clearSavedBrowserProvider();
   }
 
   global.AICoach = {
