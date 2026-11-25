@@ -115,7 +115,7 @@ The **Timer** tab shows current and best single, mo3, ao5, ao12, ao50, ao100, an
 
 ### Connect directly from the browser
 
-On the hosted Cube Timer page, open **Settings → AI coach**. Enter an OpenAI-compatible provider URL and a token intended for browser use, then select **Connect**. If the provider lists a single model, Cube Timer selects it. Otherwise, choose or enter the model ID. The provider must allow requests from the page’s origin through CORS. The browser keeps the connection in memory for the current tab until you reload or select **Disconnect browser**.
+On the hosted Cube Timer page, open **Settings → AI coach**. Enter an OpenAI-compatible provider URL and a token intended for browser use, then select **Connect**. If the provider lists a single model, Cube Timer selects it. Otherwise, choose or enter the model ID. The provider must allow requests from the page’s origin through CORS. Cube Timer restores the connection after a reload using a cookie for the provider URL and model, and browser storage for the API token. When editing the connection, leave the token blank to reuse it for the same provider URL. Select **Disconnect browser** to clear the saved connection.
 
 ### Use the local coach server
 
@@ -131,11 +131,11 @@ You can also supply defaults through the server environment. Settings saved from
 
 Open a recorded smart-cube solve or **History & stats → AI practice review**, then select **Get AI advice**. Ask a follow-up in the same dialog to continue the conversation.
 
-Use **History & stats → Bulk AI review** to select up to 50 solves in the current range. Check individual solves or select the latest 50 available. Choose **Solve times only** to share final results, including +2 penalties and DNFs. Choose **Solve times and detailed CFOP timings** to also share Cross, F2L, OLL, and PLL phase durations, initial pauses, and execution times from selected completed smart-cube solves. Select **Review selected solves** to check what will be shared, then select **Get AI advice**.
+Use **History & stats → Bulk AI review** to select up to 50 solves in the current range. Check individual solves or select the latest 50 available. Choose **Solve times only** to share final results, including +2 penalties and DNFs. Choose **Solve times, CFOP timings, and OLL and PLL algorithms** to also share phase timings, detected OLL and PLL case names, and the actual moves recorded in those two phases of selected completed smart-cube solves. Select **Review selected solves** to check what will be shared, then select **Get AI advice**.
 
 Each review links to a CubeSkills tutorial and uses its topic to suggest a practice drill or goal. The coach prioritizes a transition when the initial pause accounts for at least half of its phase time. Otherwise it uses the longest timed phase. With no timed CFOP splits, it links to the general practice module. Some videos require a free or Premium CubeSkills account. [CubeSkills 3×3 tutorials](https://www.cubeskills.com/categories/3x3)
 
-The configured provider receives the selected timing and case metrics. Follow-ups include the recent chat messages, and the conversation lasts while the review is open. The app omits raw moves, scrambles, saved comments, session names, and Bluetooth identifiers from the metrics. In local server mode, the provider token stays on the server after you save settings. Provider usage charges may apply.
+The configured provider receives the selected timing and case metrics. The detailed bulk option also shares the recorded last-layer moves. Follow-ups include the recent chat messages, and the conversation lasts while the review is open. The app omits scrambles, saved comments, session names, and Bluetooth identifiers from the metrics. In local server mode, the provider token stays on the server after you save settings. Provider usage charges may apply.
 
 The included server listens on loopback for personal use. A public deployment that supplies a shared provider can use an authenticated, rate-limited same-origin `POST /api/coach` endpoint. The first request sends a metrics object. Follow-ups send `{ metrics, conversation }` with alternating assistant and user messages. The endpoint returns `{ "advice": "…" }` with an optional `lesson` object containing a CubeSkills tutorial `title`, `url`, and `access` (either `"free account"` or `"premium"` when applicable).
 

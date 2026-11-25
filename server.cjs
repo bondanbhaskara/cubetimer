@@ -6,7 +6,8 @@ const { extname, join } = require('node:path');
 const { configureCoach, prepareReview, completeReview, ProviderError } = require('./js/coach-core.js');
 
 const MAX_METRICS_BYTES = 16 * 1024;
-const MAX_BULK_METRICS_BYTES = 32 * 1024;
+// Allow 50 solves with up to 2,048 recorded moves each (up to 3 bytes per move with spaces).
+const MAX_BULK_METRICS_BYTES = 384 * 1024;
 const MAX_CHAT_BYTES = 100 * 1024;
 const MAX_SETTINGS_BYTES = 16 * 1024;
 const ASSET_TYPES = {
