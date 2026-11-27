@@ -66,6 +66,7 @@ The connection uses [gan-web-bluetooth 3.0.2](https://github.com/afedotov/gan-we
 2. If you turn away from a recognized scramble position, follow the **Undo** instruction. If you connect while scrambled and the app cannot identify the position in the scramble, solve the cube to start again.
 3. When the display says **Scramble matched**, turn the cube to start solving. If inspection is enabled, it starts when the scramble matches and the first solve turn ends inspection.
 4. The turn that solves the cube stops the timer and saves the result and move timeline. The recap shows the four CFOP splits, total quarter turns, and turns per second. Swipe the on-screen 3D cube or turn a face on the connected cube to dismiss it. Press **Esc** during a solve to abort an attempt. Select **Disconnect cube** to return to manual timing.
+5. If the cube cannot finish the attempt, for example after a pop or when the live view no longer matches the physical cube, press **Space** to stop the timer. The attempt is saved as **DNF** with the elapsed time and no move timeline. Select **OK** under the timer to keep the time if the cube was solved.
 
 If the physical cube is solved and the live preview shows a different state, open **Cube info → Set cube as solved**. Keep the cube still while it confirms the reset. The scramble guide restarts at the beginning of the current scramble.
 
@@ -167,7 +168,7 @@ Use the half-circle icon in the top bar for live previews, or select **Settings 
 
 | Shortcut | Action |
 | --- | --- |
-| **Space** | Hold and release to start manual timing. With inspection enabled, press and release once to start inspection. |
+| **Space** | Hold and release to start manual timing. With inspection enabled, press and release once to start inspection. During a smart-cube solve, press to stop the timer and save a DNF. |
 | **Esc** | Cancel an active timing attempt. |
 | **M** | Start or stop the metronome when idle. |
 | **Alt+1**, **Alt+2**, **Alt+3** | Set the last solve to OK, +2, or DNF. |

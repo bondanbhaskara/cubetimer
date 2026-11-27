@@ -491,7 +491,7 @@
     T.start = start;
     setTimerClass('');
     setSolving(true);
-    hint('');
+    hint(smartTiming() && !coarse ? 'Press Space to stop as DNF' : '');
     if (metroSettings().auto && !metro.playing) {
       metro.start();
       metroAuto = true;
@@ -523,6 +523,14 @@
     showLastTime();
     hint();
     if (trace) openSolveRecap(solve);
+  }
+
+  // Fallback for a smart-cube solve the cube cannot finish, such as after a missed
+  // turn. The elapsed time is kept so OK can restore it if the cube was solved.
+  function stopSmartAsDNF() {
+    T.penalty = S.PEN_DNF;
+    stop(false);
+    toast('Stopped with Space and saved as DNF');
   }
 
   function cancelTimer() {
@@ -904,7 +912,9 @@
     if (T.state === 'running') {
       e.preventDefault();
       if (e.code === 'Escape') cancelTimer();
-      else if (!e.repeat && !smartTiming()) stop(e.code === 'Space');
+      else if (e.repeat) return;
+      else if (!smartTiming()) stop(e.code === 'Space');
+      else if (e.code === 'Space') stopSmartAsDNF();
       return;
     }
     if (isTyping(e.target)) return;
